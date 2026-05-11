@@ -1,0 +1,8 @@
+---
+import MainGridLayout from "@layouts/MainGridLayout.astro";
+import AdminEditor from "@components/admin/AdminEditor.svelte";
+---
+
+<MainGridLayout title="Editor" description="Write and preview" showSidebar={false}>
+  <AdminEditor client:load />
+</MainGridLayout>

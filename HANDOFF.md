@@ -1,181 +1,126 @@
-# fuwari-admin handoff
+# Handoff for next Claude Code session
 
-## Project goal
+Working directory: `E:\blog\fuwari-admin`
 
-Build `fuwari-admin` as an independent, statically deployable admin panel for managing the existing `fuwari` Astro blog.
-
-The goal is not to replace the current static-site architecture. The admin should make writing, previewing, and publishing content easier while keeping `fuwari` as the source-of-truth repository and GitHub Actions as the deployment path.
-
-## Current main-site architecture
-
-`E:\blog\fuwari` is the public Astro/Fuwari site.
-
-Current deployment flow:
-
-```text
-fuwari repository
-  -> GitHub push / scheduled workflow
-  -> GitHub Actions builds the Astro site
-  -> GitHub Actions uploads dist.zip to VPS
-  -> VPS deploy-blog script extracts into /var/www/blog.secpan.me
-  -> Caddy serves blog.secpan.me as static files
-```
-
-Important implications:
-
-- The blog is static.
-- Content should remain Git-backed.
-- GitHub history is the audit trail.
-- The VPS should preferably remain a static host for the public site.
-- Do not introduce MySQL or a traditional backend unless there is a clear later need.
-
-## Recommended admin architecture
-
-First version should be:
-
-```text
-fuwari-admin static frontend
-  -> GitHub OAuth / fine-grained token
-  -> GitHub Contents API / Git Data API
-  -> commits Markdown changes to fuwari repo
-  -> existing GitHub Actions deploys blog
-```
-
-Do not make the first version a VPS file manager or shell executor.
-
-The admin should read/write the `fuwari` repo through GitHub, not directly through the VPS filesystem.
-
-## Why separate from fuwari
-
-Keep `fuwari-admin` separate from `fuwari` because:
-
-- `fuwari` is the public presentation site.
-- `fuwari-admin` is an editing/publishing tool.
-- Admin dependencies, auth, GitHub API code, editors, preview UI, and future deployment-status tools should not pollute the public site.
-- Combining them does not solve the core write problem; a static `/admin` route would still need GitHub API or a backend.
-
-Recommended local layout:
-
-```text
-E:\blog\fuwari\        # public Astro site
-E:\blog\fuwari-admin\  # admin panel project
-```
-
-## First-version scope
-
-Keep v1 small and useful:
-
-1. GitHub authentication/token setup.
-2. Configure target repo/branch/path.
-3. List content entries from `fuwari`.
-4. Create new Blog / Notes / Projects entry.
-5. Edit frontmatter fields.
-6. Edit Markdown body.
-7. Show live Markdown preview.
-8. Commit changes back to the `fuwari` repo.
-9. Optionally show latest GitHub Actions deployment status.
-
-Avoid in v1:
-
-- Database.
-- VPS write API.
-- Arbitrary shell commands.
-- Full image optimization pipeline.
-- Complex role/permission system.
-- WYSIWYG editor if Markdown editor is enough.
-
-## Content targets to investigate in fuwari
-
-The new session should inspect the current `fuwari` repo before implementing. Likely areas:
-
-```text
-E:\blog\fuwari\src\content\
-E:\blog\fuwari\src\content.config.ts or equivalent Astro content config
-E:\blog\fuwari\src\pages\
-E:\blog\fuwari\public\optimized\covers\
-E:\blog\fuwari\raw_cover\              # local-only ignored source covers
-```
-
-Do not assume exact schemas. Read the current files.
-
-## Image/cover strategy
-
-Current direction for the main site:
-
-- Manual original cover images live locally in `raw_cover/` and are ignored by Git.
-- Optimized generated covers live in `public/optimized/covers/` and are committed.
-- `pnpm optimize-covers` generates responsive AVIF/WebP cover assets using sharp.
-- The public site prefers AVIF/WebP rendered assets.
-
-For admin v1, do not solve full cover upload/optimization yet unless explicitly requested.
-
-Suggested staged approach:
-
-1. v1: choose from existing committed optimized covers.
-2. v2: upload image to a simple committed uploads directory.
-3. v3: integrate cover optimization workflow.
-
-## Ops learning path
-
-The user is interested in learning ops/devops skills for future job value, but wants to avoid unsafe overreach.
-
-Suggested progression:
-
-1. Static GitHub-based CMS.
-2. Add read-only deployment/status panel.
-3. Later add very limited, authenticated operations such as triggering deploy or rollback.
-
-If adding a VPS API later, apply strict safety:
-
-- Run as low-privilege systemd user.
-- Use Caddy reverse proxy with authentication.
-- Store secrets server-side only.
-- Whitelist operations.
-- Never accept arbitrary shell commands.
-- Restrict writable paths.
-- Log every operation.
-- Add backups before destructive writes.
+This repository is mid-migration from a Vite/React starter into an Astro + Svelte admin UI for the Fuwari blog. Do not assume the old deleted Vite files should be restored; the new Astro/Svelte structure is intentional.
 
 ## Product direction
 
-The admin should feel like a focused personal publishing console, not a generic CMS clone.
+`fuwari-admin` should be a focused personal publishing console for the existing Fuwari/Astro blog, not a generic CMS dashboard.
 
-Prioritize:
+Important preferences:
 
-- Fast article creation.
-- Clear Blog / Notes / Projects separation.
-- Frontmatter editing without manual YAML mistakes.
-- Markdown writing comfort.
-- Preview close to final article rendering where feasible.
-- One-click commit/publish.
-- Minimal explanatory UI copy.
+- Match the main Fuwari site's visual language; avoid generic brown/admin styling.
+- Prioritize final experience over MVP shortcuts.
+- Keep UI copy minimal. Toolbars should be functional, not explanatory.
+- Do not put AI controls in the top editor toolbar. If AI returns later, keep it as a separate bottom/chat-style assistant.
+- Main flow first: write, edit metadata, preview, commit/publish later.
 
-Avoid:
+## Current architecture state
 
-- Overly generic dashboard clutter.
-- Heavy enterprise CMS patterns.
-- Premature backend/database architecture.
+The app is now Astro + Svelte. Key files for the editor work:
 
-## Suggested prompt for new Claude Code session
+- `src/pages/editor.astro`
+- `src/components/admin/AdminEditor.svelte`
+- `src/components/admin/MilkdownSurface.svelte`
+- `src/lib/storage.ts`
+- `src/types.ts`
 
-Use this in a new session with working directory `E:\blog\fuwari-admin`:
+There is a large uncommitted migration in progress:
 
-```text
-We are starting fuwari-admin from scratch. It should be an independent, statically deployable GitHub-based CMS for managing the existing Astro/Fuwari site at E:\blog\fuwari.
+- old files deleted: `index.html`, `src/App.tsx`, `src/main.tsx`, `src/styles.css`, old Vite tsconfigs, `vite.config.ts`
+- new files untracked: `astro.config.mjs`, `svelte.config.js`, `tailwind.config.cjs`, `src/components/`, `src/pages/`, `src/layouts/`, `src/content/`, etc.
 
-The admin should not use a database and should not write directly to the VPS filesystem. First version should use GitHub API to read/write Markdown content in the fuwari repo, then rely on the existing GitHub Actions deployment flow.
+Do not commit unless the user explicitly asks.
 
-Please first inspect E:\blog\fuwari to understand its content schema and publishing structure, then propose an implementation plan. Do not start coding until the architecture is approved.
+## Editor status
 
-V1 target: GitHub auth/token, list Blog/Notes/Projects content, create/edit Markdown with frontmatter form, live preview, and commit changes to the fuwari repository.
-```
+The `/editor/` page has an editor shell with:
 
-## Current recommendation
+- title/frontmatter metadata area
+- write/source/preview modes
+- Milkdown/Crepe editor in write mode
+- source textarea fallback
+- lightweight top toolbar
 
-Start in a new Claude Code session rooted at:
+Top toolbar currently contains:
 
-```text
-E:\blog\fuwari-admin
-```
+- formatting: Bold, Italic, H2, Quote, Bullet, Ordered, Code, Link
+- insert group: Note, Warn, Fig, Grid, Video, Proof
 
-Keep the current `fuwari` session for main-site fixes and deployment issues.
+The old bulky bottom `Fuwari Blocks` dock was removed.
+
+## Milkdown fixes already done
+
+In `MilkdownSurface.svelte`:
+
+- Crepe built-in cursor feature disabled.
+- `Ctrl+2` uses ProseMirror block transform to create real headings, not raw `##` text.
+- `Ctrl+0` converts current block to paragraph.
+- `Ctrl+B`, `Ctrl+I`, `Ctrl+K` use real marks/link when possible.
+- `Ctrl+Shift+K` creates a real code block.
+- Code block styling was softened.
+
+## Current Fuwari block insertion state
+
+The user noticed Note/Warn/Fig/Grid/Video/Proof were still inserting visible Markdown/directive source. This was partially fixed.
+
+Current approach:
+
+- `AdminEditor.svelte` calls `milkdownSurface.insertFuwariBlock(block.kind)` in write mode.
+- source mode still falls back to Markdown strings.
+- `MilkdownSurface.svelte` has `insertFuwariBlock(kind)` that creates ProseMirror nodes directly:
+  - Note/Warn/Proof -> `blockquote` nodes
+  - Fig/Grid -> real image nodes + caption paragraph
+  - Video -> real link node
+
+Validation already done before the final insertion-position tweak:
+
+- Note rendered as `<blockquote>`.
+- Grid rendered as `<img>` nodes.
+- No visible `:::` directive text.
+- No visible `![...]` image Markdown source.
+
+Then insertion was changed to insert after the current block instead of replacing the current selection, to avoid placing blocks inside headings/paragraphs. This final insertion-position change has only been build-tested, not browser-tested yet.
+
+Next session should first verify this in the browser.
+
+## Immediate next steps
+
+1. Run `pnpm build`.
+2. Start dev server, e.g. `pnpm dev --host 127.0.0.1 --port 5173`.
+3. Open `/editor/` with Playwright.
+4. Clear `localStorage.removeItem('fuwari-admin:editor')` before testing if stale drafts interfere.
+5. In write mode, test toolbar buttons:
+   - Note/Warn/Proof should insert blockquotes after the current block.
+   - Fig/Grid should insert real image nodes and captions after the current block.
+   - Video should insert a link node after the current block.
+   - No `:::`, `![...]`, or raw Markdown syntax should appear in write mode for these buttons.
+6. Check cursor position and page jump behavior after insertion.
+7. If visual UI changed, use frontend visual check: desktop and mobile screenshots.
+
+## Known build warnings
+
+`pnpm build` passes, but warnings remain:
+
+- Svelte sourcemap / `/* @__PURE__ */` comment warning in `AdminEditor.svelte`.
+- `gray-matter` uses eval warning.
+- AdminEditor/Milkdown client chunk exceeds 500 kB.
+
+These are not currently blocking.
+
+## Longer-term editor direction
+
+The current `insertFuwariBlock` is an intermediate UX fix using native Milkdown/ProseMirror nodes. It is not yet a true custom Fuwari directive editor.
+
+For final quality, consider custom Milkdown schema/node views for Fuwari blocks:
+
+- callout
+- figure
+- gallery
+- video
+- evidence
+
+These should look like editable Fuwari cards in write mode and serialize back to the correct Fuwari Markdown/directive format for storage.
+
+Do not jump to that larger custom schema work without first stabilizing the current main writing flow.

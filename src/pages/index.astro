@@ -1,0 +1,20 @@
+---
+import Layout from "@layouts/Layout.astro";
+import HomeHero from "@components/HomeHero.astro";
+---
+
+<Layout title="Fuwari Admin" description="Personal publishing console">
+  <div class="home-page min-h-screen">
+    <HomeHero />
+    <main>
+      <section class="admin-launch mx-auto w-full max-w-[var(--page-width)] px-4 pb-16 pt-10 md:px-6 md:pt-14">
+        <div class="admin-launch__grid">
+          <a class="admin-launch__card card-base surface-hover" href="/blog/"><span>Archive</span><strong>Blog</strong><p>管理长文、草稿和发布记录。</p></a>
+          <a class="admin-launch__card card-base surface-hover" href="/notes/"><span>Library</span><strong>Notes</strong><p>整理短笔记和 notebook。</p></a>
+          <a class="admin-launch__card card-base surface-hover" href="/projects/"><span>Case Files</span><strong>Projects</strong><p>项目页暂时只读，后续迁移。</p></a>
+          <a class="admin-launch__card admin-launch__card--primary card-base surface-hover" href="/blog/"><span>Compose</span><strong>Start from Blog</strong><p>先进入文章列表，从第一张卡片新建，或打开已有文章编辑。</p></a>
+        </div>
+      </section>
+    </main>
+  </div>
+</Layout>

@@ -1,21 +1,51 @@
+# Dependencies
 node_modules/
-dist/
+.pnpm-store/
 
+# Build output
+dist/
+.output/
+.vercel/
+.netlify/
+
+# Astro / Vite / Svelte caches
+.astro/
+.vite/
+.svelte-kit/
+*.tsbuildinfo
+
+# Test and coverage output
+coverage/
+.playwright-mcp/
+playwright-report/
+test-results/
+
+# Claude/local workspace state
+.claude/
+
+# Environment and local config
 .env
 .env.*
 !.env.example
+*.local
 
-.vite/
-*.tsbuildinfo
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-.claude/
+# Large copied/generated site assets
+/public/anime-covers/
 
+# OS/editor junk
 .DS_Store
 Thumbs.db
-*.log
-*.local
-*.png
-*.jpg
-*.jpeg
-*.webp
-*.avif
+*.swp
+*.swo
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/

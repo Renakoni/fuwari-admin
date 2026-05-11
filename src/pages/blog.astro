@@ -1,0 +1,8 @@
+---
+import MainGridLayout from "@layouts/MainGridLayout.astro";
+import AdminArchive from "@components/admin/AdminArchive.svelte";
+---
+
+<MainGridLayout title="Admin Blog" description="Manage blog posts">
+  <AdminArchive kind="blog" client:load />
+</MainGridLayout>

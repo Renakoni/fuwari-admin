@@ -1,0 +1,126 @@
+@reference "./main.css";
+
+:root {
+    --motion-duration-instant: 80ms;
+    --motion-duration-fast: 160ms;
+    --motion-duration-base: 260ms;
+    --motion-duration-slow: 520ms;
+    --motion-duration-cinematic: 860ms;
+    --motion-stagger-step: 58ms;
+    --motion-enter-distance: 1.15rem;
+    --motion-emphasis-distance: 1.75rem;
+    --motion-panel-distance: 0.42rem;
+    --motion-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+    --motion-ease-emphatic: cubic-bezier(0.16, 1, 0.3, 1);
+    --motion-ease-snap: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Page transition animations with Swup */
+html.is-changing #swup-content {
+    transition: opacity var(--motion-duration-base) var(--motion-ease-standard);
+    transform-origin: 50% 0;
+    will-change: opacity;
+}
+html.is-animating #swup-content {
+    opacity: 0;
+}
+html.swup-ready .onload-animation,
+html.swup-ready #post-container :nth-child(n) {
+    opacity: 1;
+    animation: none;
+}
+
+/* Fade-in animations for components */
+@keyframes fade-in-up {
+    0% {
+        transform: translateY(var(--motion-enter-distance)) scale(0.992);
+        opacity: 0;
+        filter: blur(10px) saturate(0.9);
+    }
+    58% {
+        opacity: 1;
+    }
+    100% {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+        filter: blur(0) saturate(1);
+    }
+}
+
+@keyframes archive-record-in {
+    0% {
+        transform: translateY(0.9rem) scale(0.992);
+        opacity: 0;
+        clip-path: inset(0 0 18% 0 round 1rem);
+    }
+    100% {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+        clip-path: inset(0 0 0 0 round 1rem);
+    }
+}
+
+@keyframes console-scanline {
+    0% { transform: translateY(-110%); opacity: 0; }
+    18% { opacity: 0.68; }
+    100% { transform: translateY(110%); opacity: 0; }
+}
+
+/* Main components */
+.onload-animation {
+    opacity: 0;
+    animation: var(--motion-duration-slow) fade-in-up var(--motion-ease-emphatic);
+    animation-fill-mode: forwards;
+}
+#navbar {
+    animation-delay: 0ms
+}
+#sidebar {
+    animation-delay: calc(var(--motion-stagger-step) * 2)
+}
+#swup-container {
+    outline: none;
+}
+#content-wrapper {
+    animation-delay: var(--content-delay);
+}
+.footer {
+    animation-delay: calc(var(--motion-stagger-step) * 4);
+}
+#banner-credit {
+    animation-delay: calc(var(--motion-stagger-step) * 6);
+}
+
+/* Post content */
+#post-container :nth-child(1) { animation-delay: calc(var(--content-delay) + var(--motion-stagger-step) * 0) }
+#post-container :nth-child(2) { animation-delay: calc(var(--content-delay) + var(--motion-stagger-step) * 1) }
+#post-container :nth-child(3) { animation-delay: calc(var(--content-delay) + var(--motion-stagger-step) * 2) }
+#post-container :nth-child(4) { animation-delay: calc(var(--content-delay) + var(--motion-stagger-step) * 3) }
+#post-container :nth-child(5) { animation-delay: calc(var(--content-delay) + var(--motion-stagger-step) * 4) }
+#post-container :nth-child(6) { animation-delay: calc(var(--content-delay) + var(--motion-stagger-step) * 5) }
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 1ms !important;
+        animation-delay: 0ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 1ms !important;
+        transition-delay: 0ms !important;
+    }
+
+    html.is-changing #swup-content,
+    html.is-animating #swup-content,
+    .onload-animation,
+    #post-container :nth-child(n),
+    .pan-wordmark__letter,
+    .pan-wordmark__ornaments {
+        opacity: 1 !important;
+        transform: none !important;
+        filter: none !important;
+        clip-path: none !important;
+        animation: none !important;
+    }
+}

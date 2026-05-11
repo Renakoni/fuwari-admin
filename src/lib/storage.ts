@@ -9,6 +9,11 @@ export const defaultSettings: AdminSettings = {
   repo: "",
   branch: "main",
   contentPath: "src/content/posts",
+  aiBaseUrl: "",
+  aiApiKey: "",
+  aiModel: "",
+  aiUseProxy: true,
+  aiRememberKey: false,
 };
 
 export function loadSettings(): AdminSettings {
@@ -23,7 +28,8 @@ export function loadSettings(): AdminSettings {
 }
 
 export function saveSettings(settings: AdminSettings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  const persisted = settings.aiRememberKey ? settings : { ...settings, aiApiKey: "" };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(persisted));
 }
 
 export function loadEditorDraft(): EditorState | null {

@@ -6,6 +6,11 @@ export type AdminSettings = {
   repo: string;
   branch: string;
   contentPath: string;
+  aiBaseUrl: string;
+  aiApiKey: string;
+  aiModel: string;
+  aiUseProxy: boolean;
+  aiRememberKey: boolean;
 };
 
 export type PostFrontmatter = {
@@ -42,3 +47,11 @@ export type EditorState = {
 };
 
 export type ContentTab = "all" | "blog" | "note" | "draft";
+
+export type AIApplyMode = "append" | "replace" | "section";
+
+export type AIQuickAction = {
+  id: string;
+  label: string;
+  instruction: string;
+};
