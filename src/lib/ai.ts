@@ -21,20 +21,20 @@ type ChatCompletionResponse = {
   };
 };
 
-function endpointFor(settings: AdminSettings) {
+function endpointFor(settings: AdminSettings): string {
   const baseUrl = settings.aiBaseUrl.trim().replace(/\/+$/g, "");
   if (!baseUrl) throw new Error("Set an AI API base URL first.");
   if (baseUrl.endsWith("/chat/completions")) return baseUrl;
   return `${baseUrl}/chat/completions`;
 }
 
-function modelFor(settings: AdminSettings) {
+function modelFor(settings: AdminSettings): string {
   const model = settings.aiModel.trim();
   if (!model) throw new Error("Set an AI model first.");
   return model;
 }
 
-export async function runAICommand(settings: AdminSettings, payload: AICommandPayload) {
+export async function runAICommand(settings: AdminSettings, payload: AICommandPayload): Promise<string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };

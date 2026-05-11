@@ -25,7 +25,7 @@ type GitHubFileResponse = {
 
 const API_BASE = "https://api.github.com";
 
-function authHeaders(settings: AdminSettings) {
+function authHeaders(settings: AdminSettings): Record<string, string> {
   return {
     Accept: "application/vnd.github+json",
     Authorization: `Bearer ${settings.token}`,
@@ -33,7 +33,7 @@ function authHeaders(settings: AdminSettings) {
   };
 }
 
-function encodePath(path: string) {
+function encodePath(path: string): string {
   return path
     .split("/")
     .map((part) => encodeURIComponent(part))
@@ -57,13 +57,13 @@ async function githubFetch<T>(settings: AdminSettings, path: string, init?: Requ
   return response.json() as Promise<T>;
 }
 
-function decodeBase64(content: string) {
+function decodeBase64(content: string): string {
   const binary = atob(content.replace(/\n/g, ""));
   const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
   return new TextDecoder().decode(bytes);
 }
 
-function encodeBase64(content: string) {
+function encodeBase64(content: string): string {
   const bytes = new TextEncoder().encode(content);
   let binary = "";
   bytes.forEach((byte) => {
@@ -72,7 +72,7 @@ function encodeBase64(content: string) {
   return btoa(binary);
 }
 
-export async function listDirectory(settings: AdminSettings, path: string) {
+export async function listDirectory(settings: AdminSettings, path: string): Promise<GitHubContent[]> {
   const encodedPath = encodePath(path);
   const result = await githubFetch<GitHubContent[] | GitHubContent>(
     settings,
@@ -82,7 +82,7 @@ export async function listDirectory(settings: AdminSettings, path: string) {
   return Array.isArray(result) ? result : [result];
 }
 
-export async function readFile(settings: AdminSettings, path: string) {
+export async function readFile(settings: AdminSettings, path: string): Promise<{ sha: string; content: string }> {
   const encodedPath = encodePath(path);
   const file = await githubFetch<GitHubFileResponse>(
     settings,
@@ -95,7 +95,7 @@ export async function readFile(settings: AdminSettings, path: string) {
   };
 }
 
-export async function listMarkdownPostFiles(settings: AdminSettings) {
+export async function listMarkdownPostFiles(settings: AdminSettings): Promise<GitHubFile[]> {
   const root = await listDirectory(settings, settings.contentPath);
   const files: GitHubFile[] = [];
 
@@ -122,7 +122,7 @@ export async function writeFile(
   content: string,
   message: string,
   sha?: string,
-) {
+): Promise<{ content: { path: string; sha: string }; commit: { html_url: string } }> {
   const encodedPath = encodePath(path);
   return githubFetch<{ content: { path: string; sha: string }; commit: { html_url: string } }>(
     settings,

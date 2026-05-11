@@ -27,7 +27,7 @@ export function loadSettings(): AdminSettings {
   }
 }
 
-export function saveSettings(settings: AdminSettings) {
+export function saveSettings(settings: AdminSettings): void {
   const persisted = settings.aiRememberKey ? settings : { ...settings, aiApiKey: "" };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(persisted));
 }
@@ -43,7 +43,7 @@ export function loadEditorDraft(): EditorState | null {
   }
 }
 
-export function saveEditorDraft(editor: EditorState | null) {
+export function saveEditorDraft(editor: EditorState | null): void {
   if (!editor) {
     localStorage.removeItem(EDITOR_KEY);
     return;

@@ -6,14 +6,14 @@ export function classifyPost(category: string): ContentKind {
   return category.trim().toLowerCase() === "notes" ? "note" : "blog";
 }
 
-export function slugFromPath(contentPath: string, path: string) {
+export function slugFromPath(contentPath: string, path: string): string {
   const relative = path.replace(new RegExp(`^${contentPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/?`), "");
   return relative.endsWith("/index.md")
     ? relative.replace(/\/index\.md$/, "")
     : relative.replace(/\.md$/, "");
 }
 
-export function pathForSlug(contentPath: string, slug: string) {
+export function pathForSlug(contentPath: string, slug: string): string {
   const cleanSlug = slug
     .trim()
     .replace(/^\/+|\/+$/g, "")
@@ -47,13 +47,13 @@ export function editorForEntry(entry: ContentEntry): EditorState {
   };
 }
 
-export function filterEntries(entries: ContentEntry[], tab: ContentTab) {
+export function filterEntries(entries: ContentEntry[], tab: ContentTab): ContentEntry[] {
   if (tab === "all") return entries;
   if (tab === "draft") return entries.filter((entry) => entry.frontmatter.draft);
   return entries.filter((entry) => entry.kind === tab);
 }
 
-export function sortEntries(entries: ContentEntry[]) {
+export function sortEntries(entries: ContentEntry[]): ContentEntry[] {
   return [...entries].sort((a, b) => b.frontmatter.published.localeCompare(a.frontmatter.published));
 }
 

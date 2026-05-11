@@ -1,7 +1,13 @@
-import matter from "gray-matter";
+import { dump, load } from "js-yaml";
 import type { ContentKind, PostFrontmatter } from "../types";
 
-function dateOnly(value: unknown) {
+const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function dateOnly(value: unknown): string {
   if (!value) return "";
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   return String(value).slice(0, 10);
@@ -42,16 +48,22 @@ export function normalizeFrontmatter(input: Record<string, unknown>, kind?: Cont
   };
 }
 
-export function parsePost(raw: string) {
-  const parsed = matter(raw);
-  const frontmatter = normalizeFrontmatter(parsed.data);
+export type ParsedPost = {
+  frontmatter: PostFrontmatter;
+  body: string;
+};
+
+export function parsePost(raw: string): ParsedPost {
+  const match = raw.match(FRONTMATTER_PATTERN);
+  const data: Record<string, unknown> = match ? asRecord(load(match[1])) : {};
+  const body: string = match ? raw.slice(match[0].length) : raw;
   return {
-    frontmatter,
-    body: parsed.content.trimStart(),
+    frontmatter: normalizeFrontmatter(data),
+    body: body.trimStart(),
   };
 }
 
-export function stringifyPost(frontmatter: PostFrontmatter, body: string) {
+export function stringifyPost(frontmatter: PostFrontmatter, body: string): string {
   const data: Record<string, unknown> = {
     title: frontmatter.title,
     published: frontmatter.published,
@@ -66,5 +78,6 @@ export function stringifyPost(frontmatter: PostFrontmatter, body: string) {
   data.draft = frontmatter.draft;
   if (frontmatter.lang) data.lang = frontmatter.lang;
 
-  return matter.stringify(body.trimStart(), data);
+  const yaml = dump(data, { lineWidth: -1, noRefs: true }).trimEnd();
+  return `---\n${yaml}\n---\n\n${body.trimStart()}`;
 }
