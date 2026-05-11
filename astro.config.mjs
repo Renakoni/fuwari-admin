@@ -24,6 +24,21 @@ import { remarkExcerpt } from "./src/plugins/remark-excerpt.js";
 import { remarkReadingTime } from "./src/plugins/remark-reading-time.mjs";
 import { pluginCustomCopyButton } from "./src/plugins/expressive-code/custom-copy-button.js";
 
+function normalizeSveltePureAnnotations() {
+	return {
+		name: "normalize-svelte-pure-annotations",
+		enforce: "post",
+		transform(code, id) {
+			if (!id.includes(".svelte")) return null;
+			const normalized = code
+				.replace(/(var|let)\s*\/\* @__PURE__ \*\/\s*\/\* @__PURE__ \*\//g, "$1")
+				.replace(/(var|let)\s*\/\* @__PURE__ \*\//g, "$1")
+				.replace(/\$\.escape\(\s*\/\* @__PURE__ \*\/\s*\/\* @__PURE__ \*\//g, "$.escape(");
+			return normalized === code ? null : { code: normalized, map: null };
+		},
+	};
+}
+
 // https://astro.build/config
 export default defineConfig({
 	site: "https://fuwari.vercel.app/",
@@ -150,7 +165,7 @@ export default defineConfig({
 		],
 	},
 	vite: {
-		plugins: [tailwindcss()],
+		plugins: [tailwindcss(), normalizeSveltePureAnnotations()],
 		define: {
 			__VUE_OPTIONS_API__: false,
 			__VUE_PROD_DEVTOOLS__: false,

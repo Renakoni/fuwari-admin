@@ -4,16 +4,17 @@
   import { loadEditorDraft, saveEditorDraft } from "../../lib/storage";
   import type { EditorState } from "../../types";
 
-  type ComposerMode = "write" | "source" | "preview";
+  type ComposerMode = "write" | "preview";
   type ToolAction = "h2" | "bold" | "italic" | "link" | "code" | "quote" | "bullet" | "ordered";
   type FuwariBlockKind = "note" | "warning" | "figure" | "gallery" | "video" | "evidence";
   type PreviewBlock =
     | { type: "heading"; text: string }
     | { type: "paragraph"; text: string }
+    | { type: "code"; lang: string; code: string }
     | { type: "callout"; label: string; body: string }
-    | { type: "figure"; label: string; body: string }
-    | { type: "gallery"; label: string; body: string }
-    | { type: "video"; label: string; body: string }
+    | { type: "figure"; label: string; body: string; src?: string }
+    | { type: "gallery"; label: string; body: string; images?: string[] }
+    | { type: "video"; label: string; body: string; href?: string }
     | { type: "evidence"; label: string; body: string };
 
   let title = "Untitled Draft";
@@ -33,8 +34,8 @@
   let slashY = 0;
   let slashQuery = "";
   let editor: EditorState | null = null;
-  let textarea: HTMLTextAreaElement;
   let milkdownSurface: any;
+  let copiedPreviewCode = "";
 
   const tools: Array<{ label: string; icon: string; hint: string; action: ToolAction }> = [
     { label: "加粗", icon: "B", hint: "Ctrl+B", action: "bold" },
@@ -48,22 +49,22 @@
   ];
 
   const blocks: Array<{ label: string; icon: string; description: string; kind: FuwariBlockKind; syntax: string }> = [
-    { label: "Note", icon: "!", description: "提示块", kind: "note", syntax: "\n> [!NOTE]\n> 内容\n" },
-    { label: "Warn", icon: "△", description: "警告块", kind: "warning", syntax: "\n> [!WARNING]\n> 内容\n" },
+    { label: "Note", icon: "!", description: "提示块", kind: "note", syntax: "\n> [!NOTE] 提示标题\n> 写下关键提示或补充说明。\n" },
+    { label: "Warn", icon: "△", description: "警告块", kind: "warning", syntax: "\n> [!WARNING] 注意事项\n> 说明风险、限制或需要读者特别留意的地方。\n" },
     { label: "Fig", icon: "▧", description: "单图", kind: "figure", syntax: "\n![图片说明](./image.png)\n*图片说明*\n" },
     { label: "Grid", icon: "▦", description: "组图", kind: "gallery", syntax: "\n![图 1](./a.png)\n![图 2](./b.png)\n![图 3](./c.png)\n*图片组说明*\n" },
-    { label: "Video", icon: "▶", description: "视频", kind: "video", syntax: "\n[视频说明](https://)\n" },
-    { label: "Proof", icon: "※", description: "证据", kind: "evidence", syntax: "\n> [!IMPORTANT]\n> Evidence\n> 内容\n" },
+    { label: "Video", icon: "▶", description: "视频", kind: "video", syntax: "\n[视频说明或标题](https://)\n" },
+    { label: "Proof", icon: "※", description: "证据", kind: "evidence", syntax: "\n> [!IMPORTANT] 证据\n> 来源、观察或支撑结论的材料。\n" },
   ];
 
   $: slashItems = [
     { label: "Heading 2", hint: "小节标题", syntax: "\n## 小节标题\n\n" },
-    { label: "Note", hint: "提示块", syntax: "\n> [!NOTE]\n> 内容\n" },
-    { label: "Warning", hint: "警告块", syntax: "\n> [!WARNING]\n> 内容\n" },
+    { label: "Note", hint: "提示块", syntax: "\n> [!NOTE] 提示标题\n> 写下关键提示或补充说明。\n" },
+    { label: "Warning", hint: "警告块", syntax: "\n> [!WARNING] 注意事项\n> 说明风险、限制或需要读者特别留意的地方。\n" },
     { label: "Figure", hint: "单图", syntax: "\n![图片说明](./image.png)\n*图片说明*\n" },
     { label: "Gallery", hint: "图片组", syntax: "\n![图 1](./a.png)\n![图 2](./b.png)\n![图 3](./c.png)\n*图片组说明*\n" },
-    { label: "Video", hint: "视频", syntax: "\n[视频说明](https://)\n" },
-    { label: "Evidence", hint: "证据材料", syntax: "\n> [!IMPORTANT]\n> Evidence\n> 内容\n" },
+    { label: "Video", hint: "视频", syntax: "\n[视频说明或标题](https://)\n" },
+    { label: "Evidence", hint: "证据材料", syntax: "\n> [!IMPORTANT] 证据\n> 来源、观察或支撑结论的材料。\n" },
   ].filter((item) => !slashQuery || `${item.label} ${item.hint}`.toLowerCase().includes(slashQuery.toLowerCase()));
 
   $: tagList = tags.split(",").map((tag) => tag.trim()).filter(Boolean);
@@ -120,45 +121,91 @@
     }
   });
 
-  function focusEditor() {
-    requestAnimationFrame(() => textarea?.focus());
-  }
-
   function insertSyntax(syntax: string) {
-    if (mode === "write" && milkdownSurface) {
+    if (milkdownSurface) {
       milkdownSurface.insertMarkdown(syntax);
       return;
     }
-    if (!textarea) {
-      body += syntax;
-      return;
-    }
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    body = `${body.slice(0, start)}${syntax}${body.slice(end)}`;
-    focusEditor();
-    requestAnimationFrame(() => {
-      const cursor = start + syntax.length;
-      textarea.selectionStart = cursor;
-      textarea.selectionEnd = cursor;
-    });
+    body += syntax;
   }
 
   function wrapSelection(before: string, after: string) {
-    if (mode === "write" && milkdownSurface) {
+    if (milkdownSurface) {
       milkdownSurface.wrapSelection(before, after);
       return;
     }
-    if (!textarea) return insertSyntax(before + after);
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selected = body.slice(start, end) || "text";
-    body = `${body.slice(0, start)}${before}${selected}${after}${body.slice(end)}`;
-    focusEditor();
-    requestAnimationFrame(() => {
-      textarea.selectionStart = start + before.length;
-      textarea.selectionEnd = start + before.length + selected.length;
-    });
+    body += `${before}text${after}`;
+  }
+
+  function escapeHtml(value: string) {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function classifyCodeIdentifier(value: string, lang: string) {
+    const normalizedLang = lang.toLowerCase();
+    const keywordSet = new Set([
+      "alignas", "alignof", "asm", "auto", "bool", "break", "case", "catch", "char", "class", "const", "constexpr", "continue", "decltype", "default", "delete", "do", "double", "else", "enum", "export", "extern", "false", "float", "for", "friend", "if", "inline", "int", "long", "namespace", "new", "nullptr", "operator", "private", "protected", "public", "return", "short", "signed", "sizeof", "static", "struct", "switch", "template", "this", "throw", "true", "try", "typedef", "typename", "union", "unsigned", "using", "virtual", "void", "volatile", "while",
+      "abstract", "as", "async", "await", "boolean", "constructor", "debugger", "extends", "finally", "from", "function", "get", "implements", "import", "in", "instanceof", "interface", "let", "module", "of", "package", "readonly", "set", "string", "super", "type", "var", "yield",
+      "and", "assert", "break", "class", "continue", "def", "del", "elif", "else", "except", "False", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "None", "nonlocal", "not", "or", "pass", "raise", "return", "True", "try", "while", "with", "yield",
+    ]);
+    const typeSet = new Set(["std", "String", "Array", "Promise", "Record", "Map", "Set", "HTMLElement", "HTMLDivElement", "KeyboardEvent", "CustomEvent", "Node", "Date", "RegExp", "Error", "console", "document", "window", "self", "list", "dict", "tuple", "set", "str", "int", "float", "bool", "None", "print", "len", "range", "enumerate", "zip", "Path"]);
+    if (keywordSet.has(value)) return "keyword";
+    if (typeSet.has(value) || /^[A-Z][A-Za-z0-9_]*$/.test(value)) return "type";
+    if (normalizedLang === "py" || normalizedLang === "python") {
+      if (["self", "cls"].includes(value)) return "variable";
+    }
+    return "plain";
+  }
+
+  function highlightCode(code: string, lang: string) {
+    const token = /(^\s*#\s*(include|define|if|ifdef|ifndef|endif|pragma)\b.*$|#.*$|\/\/.*$|\/\*[\s\S]*?\*\/|"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*(?=\s*\()|\b[A-Za-z_]\w*\b)/gm;
+    let result = "";
+    let cursor = 0;
+    for (const match of code.matchAll(token)) {
+      const value = match[0];
+      const index = match.index ?? 0;
+      result += escapeHtml(code.slice(cursor, index));
+      if (/^\s*#\s*(include|define|if|ifdef|ifndef|endif|pragma)\b/.test(value)) {
+        result += `<span class="code-token code-token--meta">${escapeHtml(value)}</span>`;
+      } else if (/^(\/\/|\/\*|#)/.test(value)) {
+        result += `<span class="code-token code-token--comment">${escapeHtml(value)}</span>`;
+      } else if (/^("""|'''|["'`])/.test(value)) {
+        result += `<span class="code-token code-token--string">${escapeHtml(value)}</span>`;
+      } else if (/^\d/.test(value)) {
+        result += `<span class="code-token code-token--number">${escapeHtml(value)}</span>`;
+      } else if (/\b[A-Za-z_]\w*$/.test(value) && code.slice(index + value.length).match(/^\s*\(/)) {
+        result += `<span class="code-token code-token--function">${escapeHtml(value)}</span>`;
+      } else {
+        const kind = classifyCodeIdentifier(value, lang);
+        result += kind === "plain" ? escapeHtml(value) : `<span class="code-token code-token--${kind}">${escapeHtml(value)}</span>`;
+      }
+      cursor = index + value.length;
+    }
+    return result + escapeHtml(code.slice(cursor));
+  }
+
+  function highlightedCode(block: Extract<PreviewBlock, { type: "code" }>) {
+    return highlightCode(block.code || "// code", block.lang);
+  }
+
+  async function copyPreviewCode(block: Extract<PreviewBlock, { type: "code" }>, index: number) {
+    const key = `${index}:${block.lang}:${block.code}`;
+    copiedPreviewCode = key;
+    window.setTimeout(() => {
+      if (copiedPreviewCode === key) copiedPreviewCode = "";
+    }, 1200);
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(block.code);
+      }
+    } catch {
+      // Clipboard permissions vary between browsers and dev contexts.
+    }
   }
 
   function getDirectiveLabel(line: string, fallback: string) {
@@ -169,6 +216,29 @@
     return title || caption || label || type || fallback;
   }
 
+  function cleanBlockquoteLine(line: string) {
+    return line.replace(/^>\s?/, "").trim();
+  }
+
+  function readDirectiveBody(lines: string[], index: number) {
+    const content: string[] = [];
+    while (lines[index + 1] && !lines[index + 1].trim().startsWith(":::")) {
+      index += 1;
+      content.push(lines[index]);
+    }
+    return { index, body: content.join("\n").trim() };
+  }
+
+  function parseMarkdownImage(line: string) {
+    const match = line.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+    return match ? { alt: match[1] || "Image", src: match[2] } : null;
+  }
+
+  function parseMarkdownLink(line: string) {
+    const match = line.trim().match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    return match ? { label: match[1], href: match[2] } : null;
+  }
+
   function parsePreviewBlocks(markdown: string): PreviewBlock[] {
     const blocks: PreviewBlock[] = [];
     const lines = markdown.split("\n");
@@ -176,48 +246,85 @@
       const line = lines[index];
       const trimmed = line.trim();
       if (!trimmed) continue;
-      if (trimmed.startsWith("## ")) {
-        blocks.push({ type: "heading", text: trimmed.slice(3) });
+      if (trimmed.startsWith("```")) {
+        const lang = trimmed.slice(3).trim() || "text";
+        const code: string[] = [];
+        while (index + 1 < lines.length && !lines[index + 1].trim().startsWith("```")) {
+          index += 1;
+          code.push(lines[index]);
+        }
+        if (index + 1 < lines.length) index += 1;
+        blocks.push({ type: "code", lang, code: code.join("\n") });
+        continue;
+      }
+      const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+      if (heading) {
+        blocks.push({ type: "heading", text: heading[2] });
+        continue;
+      }
+      const callout = trimmed.match(/^>\s?\[!(NOTE|WARNING|IMPORTANT|TIP)\]\s*(.*)$/i);
+      if (callout) {
+        const content: string[] = [];
+        while (lines[index + 1]?.trim().startsWith(">")) {
+          index += 1;
+          content.push(cleanBlockquoteLine(lines[index]));
+        }
+        const label = callout[2] || (callout[1].toUpperCase() === "WARNING" ? "Warning" : callout[1].toUpperCase() === "IMPORTANT" ? "Evidence" : "Note");
+        blocks.push({ type: callout[1].toUpperCase() === "IMPORTANT" ? "evidence" : "callout", label, body: content.join("\n").trim() });
         continue;
       }
       if (trimmed.startsWith(":::callout")) {
-        const content: string[] = [];
-        while (lines[index + 1] && !lines[index + 1].trim().startsWith(":::") ) {
-          index += 1;
-          content.push(lines[index]);
-        }
-        blocks.push({ type: "callout", label: getDirectiveLabel(trimmed, "Note"), body: content.join("\n").trim() });
+        const result = readDirectiveBody(lines, index);
+        index = result.index;
+        blocks.push({ type: "callout", label: getDirectiveLabel(trimmed, "Note"), body: result.body });
         continue;
       }
       if (trimmed.startsWith(":::figure")) {
-        const content: string[] = [];
-        while (lines[index + 1] && !lines[index + 1].trim().startsWith(":::") ) {
-          index += 1;
-          content.push(lines[index]);
-        }
-        blocks.push({ type: "figure", label: getDirectiveLabel(trimmed, "Figure"), body: content.join("\n").trim() });
+        const result = readDirectiveBody(lines, index);
+        index = result.index;
+        blocks.push({ type: "figure", label: getDirectiveLabel(trimmed, "Figure"), body: result.body });
         continue;
       }
       if (trimmed.startsWith(":::gallery")) {
-        const content: string[] = [];
-        while (lines[index + 1] && !lines[index + 1].trim().startsWith(":::") ) {
-          index += 1;
-          content.push(lines[index]);
-        }
-        blocks.push({ type: "gallery", label: getDirectiveLabel(trimmed, "Gallery"), body: content.join("\n").trim() });
+        const result = readDirectiveBody(lines, index);
+        index = result.index;
+        blocks.push({ type: "gallery", label: getDirectiveLabel(trimmed, "Gallery"), body: result.body });
         continue;
       }
       if (trimmed.startsWith(":::evidence")) {
-        const content: string[] = [];
-        while (lines[index + 1] && !lines[index + 1].trim().startsWith(":::") ) {
-          index += 1;
-          content.push(lines[index]);
-        }
-        blocks.push({ type: "evidence", label: getDirectiveLabel(trimmed, "Evidence"), body: content.join("\n").trim() });
+        const result = readDirectiveBody(lines, index);
+        index = result.index;
+        blocks.push({ type: "evidence", label: getDirectiveLabel(trimmed, "Evidence"), body: result.body });
         continue;
       }
       if (trimmed.startsWith("::video")) {
-        blocks.push({ type: "video", label: getDirectiveLabel(trimmed, "Video"), body: trimmed.match(/src="([^"]+)"/)?.[1] || "Video embed" });
+        const href = trimmed.match(/src="([^"]+)"/)?.[1];
+        blocks.push({ type: "video", label: getDirectiveLabel(trimmed, "Video"), body: href || "Video embed", href });
+        continue;
+      }
+      const galleryImages: string[] = [];
+      let galleryIndex = index;
+      while (parseMarkdownImage(lines[galleryIndex]?.trim() || "")) {
+        galleryImages.push(parseMarkdownImage(lines[galleryIndex].trim())!.src);
+        galleryIndex += 1;
+      }
+      if (galleryImages.length > 1) {
+        const caption = lines[galleryIndex]?.trim().match(/^\*(.+)\*$/)?.[1];
+        index = caption ? galleryIndex : galleryIndex - 1;
+        blocks.push({ type: "gallery", label: caption || "Gallery", body: caption || `${galleryImages.length} images`, images: galleryImages });
+        continue;
+      }
+      const image = parseMarkdownImage(trimmed);
+      if (image) {
+        const next = lines[index + 1]?.trim();
+        const caption = next?.match(/^\*(.+)\*$/)?.[1];
+        if (caption) index += 1;
+        blocks.push({ type: "figure", label: caption || image.alt, body: image.alt, src: image.src });
+        continue;
+      }
+      const link = parseMarkdownLink(trimmed);
+      if (link && /^https?:\/\//.test(link.href)) {
+        blocks.push({ type: "video", label: link.label, body: link.href, href: link.href });
         continue;
       }
       if (!trimmed.startsWith(":::")) {
@@ -243,13 +350,13 @@
     if (tool.action === "italic") milkdownSurface.toggleWrap("*", "*");
     if (tool.action === "link") milkdownSurface.insertLink();
     if (tool.action === "code") milkdownSurface.setCodeBlock();
-    if (tool.action === "quote") milkdownSurface.insertMarkdown("\n> 引用内容\n");
-    if (tool.action === "bullet") milkdownSurface.insertMarkdown("\n- 列表项\n");
-    if (tool.action === "ordered") milkdownSurface.insertMarkdown("\n1. 列表项\n");
+    if (tool.action === "quote") milkdownSurface.insertBlockquote();
+    if (tool.action === "bullet") milkdownSurface.insertList(false);
+    if (tool.action === "ordered") milkdownSurface.insertList(true);
   }
 
   function openSlashMenu(event: CustomEvent<{ x: number; y: number }>) {
-    slashX = event.detail.x;
+    slashX = Math.min(Math.max(event.detail.x, 12), window.innerWidth - 364);
     slashY = event.detail.y;
     slashQuery = "";
     slashOpen = true;
@@ -284,7 +391,7 @@
       <span>Local draft{lastSavedAt ? ` · saved ${lastSavedAt}` : ""}</span>
     </div>
     <div class="composer-actions">
-      {#each ["write", "source", "preview"] as item}
+      {#each ["write", "preview"] as item}
         <button class:active={mode === item} type="button" on:click={() => (mode = item as ComposerMode)}>{item}</button>
       {/each}
       <button class="commit" type="button">Commit</button>
@@ -340,11 +447,21 @@
         <div class="preview-label">Preview / Fuwari Markdown 2.0</div>
         <h1>{title}</h1>
         {#if description}<p class="preview-dek">{description}</p>{/if}
-        {#each previewBlocks as block}
+        {#each previewBlocks as block, index}
           {#if block.type === "heading"}
             <h2>{block.text}</h2>
-          {:else if block.type === "paragraph"}
-            <p>{block.text}</p>
+          {:else if block.type === "code"}
+            <figure class="preview-code-block">
+              <figcaption>{block.lang}</figcaption>
+              <button class="preview-code-copy" type="button" aria-label="Copy code" on:click={() => copyPreviewCode(block, index)}>
+                {#if copiedPreviewCode === `${index}:${block.lang}:${block.code}`}
+                  ✓
+                {:else}
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
+                {/if}
+              </button>
+              <pre><code>{@html highlightedCode(block)}</code></pre>
+            </figure>
           {:else if block.type === "callout"}
             <aside class="preview-directive preview-directive--callout">
               <span>Callout</span>
@@ -353,7 +470,7 @@
             </aside>
           {:else if block.type === "figure"}
             <figure class="preview-directive preview-directive--figure">
-              <div class="preview-media-placeholder">FIG</div>
+              <div class="preview-media-placeholder">{block.src ? block.src : "FIG"}</div>
               {#if block.body}<p>{block.body}</p>{/if}
               <figcaption>{block.label}</figcaption>
             </figure>
@@ -361,7 +478,9 @@
             <section class="preview-directive preview-directive--gallery">
               <span>Gallery</span>
               <strong>{block.label}</strong>
-              <div class="preview-gallery-grid"><i></i><i></i><i></i></div>
+              <div class="preview-gallery-grid">
+                {#each block.images?.slice(0, 3) || ["", "", ""] as image}<i>{image}</i>{/each}
+              </div>
               {#if block.body}<p>{block.body}</p>{/if}
             </section>
           {:else if block.type === "video"}
@@ -379,14 +498,6 @@
           {/if}
         {/each}
       </article>
-    {:else if mode === "source"}
-      <section class="composer-write source-mode">
-        <div class="write-rail">
-          <span>SOURCE</span>
-          <span>FM 2.0</span>
-        </div>
-        <textarea bind:this={textarea} bind:value={body} spellcheck="false" aria-label="Fuwari Markdown source"></textarea>
-      </section>
     {:else}
       <section class="composer-write">
         <div class="write-rail">
@@ -546,7 +657,6 @@
     padding: 0.2rem 0.46rem;
   }
   .composer-title,
-  .composer-write textarea,
   .metadata-modal input {
     width: 100%;
     border: 0;
@@ -718,19 +828,6 @@
     text-orientation: mixed;
     writing-mode: vertical-rl;
   }
-  .composer-write textarea {
-    min-height: 31rem;
-    resize: vertical;
-    padding: 1.1rem clamp(1.05rem, 3vw, 2.25rem) 1.7rem;
-    color: rgb(255 255 255 / 0.75);
-    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
-    font-size: 0.95rem;
-    line-height: 1.82;
-  }
-  .composer-write:not(.source-mode) textarea {
-    font-family: inherit;
-    font-size: 1rem;
-  }
   .composer-preview {
     min-height: 31rem;
     padding: clamp(1.15rem, 3vw, 2.2rem);
@@ -762,6 +859,88 @@
     color: rgb(255 255 255 / 0.84);
     font-size: 1.45rem;
     letter-spacing: -0.04em;
+  }
+  .preview-code-block {
+    position: relative;
+    margin: 1.05rem 0;
+    max-width: 52rem;
+    border: 1px solid rgb(255 255 255 / 0.08);
+    border-radius: 1rem;
+    background: rgb(0 0 0 / 0.18);
+    overflow: hidden;
+  }
+  .preview-code-copy {
+    position: absolute;
+    top: 0.72rem;
+    right: 0.72rem;
+    display: inline-grid;
+    place-items: center;
+    width: 1.82rem;
+    height: 1.82rem;
+    border: 1px solid rgb(255 255 255 / 0.08);
+    border-radius: 0.45rem;
+    background: rgb(13 17 23 / 0.78);
+    color: rgb(255 255 255 / 0.66);
+    line-height: 1;
+    box-shadow: 0 8px 22px rgb(0 0 0 / 0.22);
+    backdrop-filter: blur(10px);
+  }
+  .preview-code-copy:hover {
+    color: rgb(255 255 255 / 0.86);
+    background: rgb(255 255 255 / 0.08);
+  }
+  .preview-code-copy svg {
+    width: 0.94rem;
+    height: 0.94rem;
+    fill: currentColor;
+  }
+  .preview-code-block figcaption {
+    display: inline-flex;
+    margin: 0.72rem 0 0 0.82rem;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.06);
+    padding: 0.18rem 0.48rem;
+    color: rgb(255 255 255 / 0.46);
+    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+    font-size: 0.62rem;
+    font-weight: 850;
+  }
+  .preview-code-block pre {
+    margin: 0;
+    padding: 0.74rem 0.9rem 0.95rem;
+    overflow: auto;
+  }
+  .preview-code-block code {
+    color: rgb(255 255 255 / 0.76);
+    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+    font-size: 0.86rem;
+    line-height: 1.72;
+    white-space: pre;
+  }
+  :global(.code-token--keyword) {
+    color: #ff7b72;
+  }
+  :global(.code-token--type) {
+    color: #79c0ff;
+  }
+  :global(.code-token--function) {
+    color: #d2a8ff;
+  }
+  :global(.code-token--string) {
+    color: #a5d6ff;
+  }
+  :global(.code-token--number) {
+    color: #79c0ff;
+  }
+  :global(.code-token--comment) {
+    color: #8b949e;
+    font-style: italic;
+  }
+  :global(.code-token--meta) {
+    color: #ffa657;
+  }
+  :global(.code-token--variable) {
+    color: #ffa657;
   }
   .preview-directive {
     position: relative;
