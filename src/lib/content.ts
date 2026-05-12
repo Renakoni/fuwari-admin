@@ -1,6 +1,6 @@
-import type { AdminSettings, ContentEntry, ContentKind, ContentTab, EditorState } from "../types";
-import { listMarkdownPostFiles, readFile } from "./github";
-import { defaultFrontmatter, parsePost } from "./frontmatter";
+import type { ContentEntry, ContentKind, ContentTab, EditorState } from "../types";
+import { defaultFrontmatter } from "./frontmatter";
+import { loadContentEntries as loadContentEntriesFromApi } from "./adminApi";
 
 export function classifyPost(category: string): ContentKind {
   return category.trim().toLowerCase() === "notes" ? "note" : "blog";
@@ -23,11 +23,11 @@ export function pathForSlug(contentPath: string, slug: string): string {
   return `${contentPath.replace(/\/+$/g, "")}/${cleanSlug}/index.md`;
 }
 
-export function editorForNewPost(settings: AdminSettings, kind: ContentKind, slug: string, title: string): EditorState {
+export function editorForNewPost(kind: ContentKind, slug: string, title: string, contentPath = "src/content/posts"): EditorState {
   const frontmatter = defaultFrontmatter(kind, title || slug || "Untitled");
   return {
     mode: "create",
-    path: pathForSlug(settings.contentPath, slug),
+    path: pathForSlug(contentPath, slug),
     slug,
     kind,
     frontmatter,
@@ -57,25 +57,6 @@ export function sortEntries(entries: ContentEntry[]): ContentEntry[] {
   return [...entries].sort((a, b) => b.frontmatter.published.localeCompare(a.frontmatter.published));
 }
 
-export async function loadContentEntries(settings: AdminSettings): Promise<ContentEntry[]> {
-  const files = await listMarkdownPostFiles(settings);
-  const entries = await Promise.all(
-    files.map(async (file) => {
-      const { content, sha } = await readFile(settings, file.path);
-      const parsed = parsePost(content);
-      const kind = classifyPost(parsed.frontmatter.category);
-
-      return {
-        path: file.path,
-        sha,
-        slug: slugFromPath(settings.contentPath, file.path),
-        kind,
-        frontmatter: parsed.frontmatter,
-        body: parsed.body,
-        raw: content,
-      } satisfies ContentEntry;
-    }),
-  );
-
-  return sortEntries(entries);
+export async function loadContentEntries(): Promise<ContentEntry[]> {
+  return loadContentEntriesFromApi();
 }

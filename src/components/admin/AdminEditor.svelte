@@ -7,10 +7,8 @@
   import EditorTopBar from "./EditorTopBar.svelte";
   import MilkdownSurface from "./MilkdownSurface.svelte";
   import SlashMenu from "./SlashMenu.svelte";
-  import { draftPathForEditor, remoteDraftCommitMessage } from "../../lib/drafts";
-  import { readFileOrNull, writeFile } from "../../lib/github";
-  import { loadEditorDraft, loadSettings, saveEditorDraft } from "../../lib/storage";
-  import { stringifyPost } from "../../lib/frontmatter";
+  import { saveRemoteDraft as saveRemoteDraftToApi } from "../../lib/drafts";
+  import { loadEditorDraft, saveEditorDraft } from "../../lib/storage";
   import { isImagePlaceholder } from "./imageBlock";
   import type { EditorState } from "../../types";
   import { parsePreviewBlocks } from "./adminPreview";
@@ -227,12 +225,6 @@
   async function saveRemoteDraft() {
     const snapshot = syncEditorFromFields();
     if (!snapshot) return;
-    const settings = loadSettings();
-    if (!settings.owner.trim() || !settings.repo.trim() || !settings.token.trim()) {
-      saveState = "error";
-      saveMessage = "Configure GitHub settings before remote Save.";
-      return;
-    }
     if (pendingImages.size > 0) {
       saveState = "blocked";
       saveMessage = `${pendingImages.size} local image${pendingImages.size === 1 ? "" : "s"} must be uploaded before remote Save.`;
@@ -250,9 +242,8 @@
     try {
       snapshot.frontmatter = { ...snapshot.frontmatter, draft: true };
       draft = true;
-      const path = draftPathForEditor(snapshot);
-      const existing = await readFileOrNull(settings, path);
-      await writeFile(settings, path, stringifyPost(snapshot.frontmatter, snapshot.body), remoteDraftCommitMessage(snapshot), existing?.sha);
+      const saved = await saveRemoteDraftToApi(snapshot);
+      snapshot.sha = saved.sha;
       saveEditorDraft(snapshot);
       lastSavedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       saveState = "saved";

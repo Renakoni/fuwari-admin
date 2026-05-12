@@ -1,8 +1,8 @@
 <script lang="ts">
   import { editorForEntry, editorForNewPost, loadContentEntries } from "../../lib/content";
   import { editorForRemoteDraft, listRemoteDrafts } from "../../lib/drafts";
-  import { loadSettings, saveEditorDraft } from "../../lib/storage";
-  import type { AdminSettings, ContentEntry } from "../../types";
+  import { saveEditorDraft } from "../../lib/storage";
+  import type { ContentEntry } from "../../types";
 
   export let kind: "blog" | "note" = "blog";
 
@@ -13,7 +13,6 @@
 
   let entries: ContentEntry[] = [];
   let remoteDrafts: ContentEntry[] = [];
-  let currentSettings: AdminSettings | null = null;
   let loading = true;
   let error = "";
 
@@ -34,8 +33,7 @@
   }
 
   function openNew() {
-    const settings = loadSettings();
-    const draft = editorForNewPost(settings, kind, createSlug(), newTitle);
+    const draft = editorForNewPost(kind, createSlug(), newTitle);
     saveEditorDraft(draft);
     window.location.href = "/editor/";
   }
@@ -46,8 +44,7 @@
   }
 
   function openRemoteDraft(entry: ContentEntry) {
-    if (!currentSettings) return;
-    saveEditorDraft(editorForRemoteDraft(currentSettings, entry));
+    saveEditorDraft(editorForRemoteDraft(entry));
     window.location.href = "/editor/";
   }
 
@@ -55,15 +52,7 @@
     loading = true;
     error = "";
     try {
-      const settings = loadSettings();
-      currentSettings = settings;
-      if (!settings.owner.trim() || !settings.repo.trim() || !settings.token.trim()) {
-        error = "还没有配置 GitHub repository 和 token。";
-        entries = [];
-        remoteDrafts = [];
-        return;
-      }
-      const [allEntries, allRemoteDrafts] = await Promise.all([loadContentEntries(settings), listRemoteDrafts(settings)]);
+      const [allEntries, allRemoteDrafts] = await Promise.all([loadContentEntries(), listRemoteDrafts()]);
       entries = allEntries.filter((entry) => entry.kind === kind);
       remoteDrafts = allRemoteDrafts.filter((entry) => entry.kind === kind);
     } catch (caught) {
@@ -109,9 +98,9 @@
     {:else if error}
       <article class="admin-post-card admin-post-card--message post-card card-base">
         <span class="admin-post-card__kicker">Repository</span>
-        <strong>Connect GitHub</strong>
+        <strong>Backend unavailable</strong>
         <p>{error}</p>
-        <span class="admin-post-card__meta">Settings modal pending</span>
+        <span class="admin-post-card__meta">Check /api</span>
       </article>
     {:else if entries.length === 0 && remoteDrafts.length === 0}
       <article class="admin-post-card admin-post-card--message post-card card-base">

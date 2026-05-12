@@ -7,9 +7,11 @@
     "dev": "astro dev",
     "start": "astro dev",
     "build": "astro build",
+    "api:build": "tsc -p tsconfig.server.json",
+    "api:start": "node server-dist/server/index.js",
     "preview": "astro preview",
     "astro": "astro",
-    "type-check": "tsc --noEmit --isolatedDeclarations"
+    "type-check": "tsc --noEmit --isolatedDeclarations && tsc -p tsconfig.server.json --noEmit"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.6",
@@ -75,6 +77,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/markdown-it": "^14.1.2",
     "@types/mdast": "^4.0.4",
+    "@types/node": "^24.10.1",
     "@types/sanitize-html": "^2.16.0",
     "postcss-import": "^16.1.1",
     "postcss-nesting": "^13.0.2"

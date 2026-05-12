@@ -38,8 +38,11 @@ jobs:
       - name: Build admin
         run: pnpm build
 
-      - name: Package dist
-        run: cd dist && zip -qr ../dist.zip .
+      - name: Build API
+        run: pnpm api:build
+
+      - name: Package release
+        run: zip -qr fuwari-admin-release.zip dist server-dist package.json pnpm-lock.yaml
 
       - name: Configure SSH
         run: |
@@ -49,8 +52,8 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Upload dist package
-        run: scp -i ~/.ssh/deploy_key dist.zip "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.VPS_ADMIN_TARGET_ZIP }}"
+      - name: Upload release package
+        run: scp -i ~/.ssh/deploy_key fuwari-admin-release.zip "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.VPS_ADMIN_TARGET_ZIP }}"
 
       - name: Deploy on VPS
         run: ssh -i ~/.ssh/deploy_key "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" deploy-fuwari-admin
