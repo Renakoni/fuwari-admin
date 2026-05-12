@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import EditorMetadataModal from "./EditorMetadataModal.svelte";
   import EditorMetadataRail from "./EditorMetadataRail.svelte";
   import EditorPreview from "./EditorPreview.svelte";
@@ -15,6 +15,13 @@
   import type { EditorBlock, EditorTool, SlashItem } from "./editorConfig";
 
   type ComposerMode = "write" | "preview";
+  type PendingImage = {
+    src: string;
+    objectUrl: string;
+    name: string;
+    size: number;
+    type: string;
+  };
 
   let title = "Untitled Draft";
   let description = "";
@@ -35,6 +42,7 @@
   let editor: EditorState | null = null;
   let milkdownSurface: any;
   let copiedPreviewCode = "";
+  let pendingImages = new Map<string, PendingImage>();
 
   $: slashItems = allSlashItems.filter((item) => !slashQuery || `${item.label} ${item.hint}`.toLowerCase().includes(slashQuery.toLowerCase()));
 
@@ -90,6 +98,10 @@
         body,
       };
     }
+  });
+
+  onDestroy(() => {
+    pendingImages.forEach((image) => URL.revokeObjectURL(image.objectUrl));
   });
 
   function insertSyntax(syntax: string) {
@@ -170,10 +182,21 @@
     slashOpen = false;
     slashQuery = "";
   }
+
+  function selectPendingImage(event: CustomEvent<PendingImage>) {
+    const previous = pendingImages.get(event.detail.src);
+    if (previous && previous.objectUrl !== event.detail.objectUrl) URL.revokeObjectURL(previous.objectUrl);
+    pendingImages = new Map(pendingImages).set(event.detail.src, event.detail);
+  }
+
+  function setMode(nextMode: ComposerMode) {
+    mode = nextMode;
+    if (nextMode === "preview") milkdownSurface = null;
+  }
 </script>
 
 <section class="composer-shell">
-  <EditorTopBar {draft} {lastSavedAt} {mode} on:modeChange={(event) => (mode = event.detail)} />
+  <EditorTopBar {draft} {lastSavedAt} {mode} on:modeChange={(event) => setMode(event.detail)} />
 
   <main class="composer-stage card-base">
     <section class="composer-hero">
@@ -191,14 +214,16 @@
     <EditorToolbar {tools} {blocks} on:tool={(event) => applyTool(event.detail)} on:block={(event) => insertBlock(event.detail)} />
 
     {#if mode === "preview"}
-      <EditorPreview {title} {description} {previewBlocks} {copiedPreviewCode} on:copyCode={(event) => copyPreviewCode(event.detail.block, event.detail.index)} />
+      <EditorPreview {title} {description} {previewBlocks} {copiedPreviewCode} {pendingImages} on:copyCode={(event) => copyPreviewCode(event.detail.block, event.detail.index)} />
     {:else}
       <section class="composer-write">
         <div class="write-rail">
           <span>WRITE</span>
           <span>CREPE</span>
         </div>
-        <MilkdownSurface bind:this={milkdownSurface} value={body} on:change={(event) => (body = event.detail)} on:slash={openSlashMenu} />
+        {#if editor}
+          <MilkdownSurface bind:this={milkdownSurface} value={body} {pendingImages} on:change={(event) => (body = event.detail)} on:slash={openSlashMenu} on:selectImage={selectPendingImage} />
+        {/if}
       </section>
     {/if}
   </main>
@@ -268,6 +293,7 @@
     padding: 0.2rem 0.46rem;
   }
   .composer-title {
+    box-sizing: border-box;
     width: 100%;
     border: 0;
     background: transparent;
@@ -277,10 +303,11 @@
   .composer-title {
     display: block;
     max-width: 62rem;
-    font-size: clamp(2.35rem, 5.8vw, 4.75rem);
+    font-size: clamp(2rem, 4.4vw, 3.5rem);
     font-weight: 900;
-    letter-spacing: -0.075em;
-    line-height: 0.9;
+    letter-spacing: -0.035em;
+    line-height: 1.16;
+    padding-block: 0.06em 0.18em;
   }
   .composer-write {
     display: grid;
@@ -303,14 +330,9 @@
   }
   @media (max-width: 1100px) {
     .composer-hero { grid-template-columns: 1fr; }
-    .metadata-rail {
-      border-left: 0;
-      border-top: 1px solid rgb(255 255 255 / 0.065);
-      padding: 0.85rem 0 0;
-    }
   }
   @media (max-width: 760px) {
-    .composer-title { font-size: clamp(2.4rem, 14vw, 4.2rem); }
+    .composer-title { font-size: clamp(2rem, 11vw, 3.2rem); }
     .composer-write { grid-template-columns: 1fr; }
     .write-rail { display: none; }
   }

@@ -5,14 +5,24 @@
   import { Fragment, type Node as ProseMirrorNode } from "@milkdown/kit/prose/model";
   import { TextSelection } from "@milkdown/kit/prose/state";
   import type { EditorView } from "@milkdown/kit/prose/view";
+  import { defaultImageBlock, imageNote, isImagePlaceholder, parseImageBlock, serializeImageBlock } from "./imageBlock";
   import "@milkdown/crepe/theme/frame-dark.css";
 
-  type FuwariBlockKind = "note" | "warning" | "figure" | "gallery" | "video" | "evidence";
+  type FuwariBlockKind = "note" | "warning" | "figure" | "video" | "evidence";
 
   export let value = "";
   export let placeholder = "Start writing with Fuwari Markdown...";
+  export let pendingImages = new Map<string, PendingImage>();
 
-  const dispatch = createEventDispatcher<{ change: string; slash: { x: number; y: number } }>();
+  type PendingImage = {
+    src: string;
+    objectUrl: string;
+    name: string;
+    size: number;
+    type: string;
+  };
+
+  const dispatch = createEventDispatcher<{ change: string; slash: { x: number; y: number }; selectImage: PendingImage }>();
 
   const COPY_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>`;
   const LANGUAGE_OPTIONS = [
@@ -45,6 +55,7 @@
   let root: HTMLDivElement;
   let crepe: Crepe | null = null;
   let copyObserver: MutationObserver | null = null;
+  let syncingEditorChrome = false;
   let copiedUntil = 0;
   let internalValue = "";
 
@@ -79,13 +90,25 @@
     await crepe.create();
     root.addEventListener("keydown", handleKeydown, { capture: true });
     document.addEventListener("pointerdown", handleDocumentCopyPointerDown, true);
-    syncCopyButtons();
-    copyObserver = new MutationObserver(syncCopyButtons);
+    syncEditorChrome();
+    copyObserver = new MutationObserver(syncEditorChrome);
     copyObserver.observe(root, { childList: true, subtree: true });
   });
 
   $: if (crepe && value !== internalValue) {
     internalValue = value;
+  }
+
+  $: if (root && pendingImages) syncImageCards();
+
+  function safeImageSrc(name: string) {
+    const trimmed = name.trim().toLowerCase();
+    const lastDot = trimmed.lastIndexOf(".");
+    const base = (lastDot > 0 ? trimmed.slice(0, lastDot) : trimmed)
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "image";
+    const ext = lastDot > 0 ? trimmed.slice(lastDot + 1).replace(/[^a-z0-9]/g, "") : "png";
+    return `./${base}.${ext || "png"}`;
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -157,7 +180,7 @@
     window.setTimeout(() => {
       button.dataset.copied = "";
       button.innerHTML = COPY_ICON;
-      syncCopyButtons();
+      syncEditorChrome();
     }, 1200);
     try {
       if (navigator.clipboard && window.isSecureContext) {
@@ -168,23 +191,177 @@
     }
   }
 
+  function syncEditorChrome() {
+    if (syncingEditorChrome) return;
+    syncingEditorChrome = true;
+    copyObserver?.disconnect();
+    try {
+      syncCopyButtons();
+      syncImageCards();
+    } finally {
+      if (root) copyObserver?.observe(root, { childList: true, subtree: true });
+      syncingEditorChrome = false;
+    }
+  }
+
   function syncCopyButtons() {
     root?.querySelectorAll(".milkdown-code-block").forEach((codeBlock) => {
-      let button = codeBlock.querySelector(".fuwari-copy-button") as HTMLButtonElement | null;
-      if (!button) {
-        button = document.createElement("button");
-        button.type = "button";
-        button.className = "fuwari-copy-button";
-        button.setAttribute("aria-label", "Copy code");
-        button.innerHTML = COPY_ICON;
-        button.addEventListener("pointerdown", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          void markCustomCopy(button!, codeBlock);
-        });
-        codeBlock.append(button);
+      const language = getCodeBlockLanguage(codeBlock).trim().toLowerCase();
+      codeBlock.toggleAttribute("data-fuwari-video", language === "video");
+      codeBlock.toggleAttribute("data-fuwari-image", language === "image");
+      codeBlock.setAttribute("data-fuwari-language", language || "text");
+      if (language === "image") {
+        codeBlock.querySelector(".fuwari-copy-button")?.remove();
+      } else {
+        let button = codeBlock.querySelector(".fuwari-copy-button") as HTMLButtonElement | null;
+        if (!button) {
+          button = document.createElement("button");
+          button.type = "button";
+          button.className = "fuwari-copy-button";
+          button.setAttribute("aria-label", "Copy code");
+          button.innerHTML = COPY_ICON;
+          button.addEventListener("pointerdown", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void markCustomCopy(button!, codeBlock);
+          });
+          codeBlock.append(button);
+        }
       }
       syncLanguageInput(codeBlock);
+    });
+  }
+
+  function syncImageCards() {
+    root?.querySelectorAll(".milkdown-code-block").forEach((codeBlock) => {
+      const language = getCodeBlockLanguage(codeBlock).trim().toLowerCase();
+      if (language !== "image") {
+        codeBlock.querySelector(".fuwari-image-card")?.remove();
+        return;
+      }
+      let card = codeBlock.querySelector(".fuwari-image-card") as HTMLDivElement | null;
+      if (!card) {
+        card = createImageCard(codeBlock);
+        codeBlock.append(card);
+      }
+      updateImageCard(codeBlock, card);
+    });
+  }
+
+  function createImageCard(codeBlock: Element) {
+    const card = document.createElement("div");
+    card.className = "fuwari-image-card";
+    card.contentEditable = "false";
+    card.addEventListener("pointerdown", (event) => event.stopPropagation());
+    card.addEventListener("keydown", (event) => event.stopPropagation());
+    card.innerHTML = `
+      <div class="fuwari-image-card-preview"><div class="fuwari-image-card-fallback"><span>IMG</span></div><img alt="" /></div>
+      <div class="fuwari-image-card-body">
+        <div class="fuwari-image-card-fields">
+          <label>src<input class="fuwari-image-card-src" spellcheck="false" /></label>
+          <label>note<input class="fuwari-image-card-note-input" /></label>
+        </div>
+        <div class="fuwari-image-card-actions">
+          <input class="fuwari-image-card-file" type="file" accept="image/*" />
+          <button class="fuwari-image-card-pick" type="button">选择图片</button>
+          <span class="fuwari-image-card-status"></span>
+        </div>
+      </div>
+      <button class="fuwari-image-card-delete" type="button" aria-label="Delete image block">×</button>
+    `;
+    card.querySelector("img")?.addEventListener("error", () => {
+      const img = card.querySelector("img") as HTMLImageElement | null;
+      card.dataset.failedSrc = img?.getAttribute("src") || "";
+      card.removeAttribute("data-has-image");
+      img?.removeAttribute("src");
+    });
+    card.querySelectorAll(".fuwari-image-card-src, .fuwari-image-card-note-input").forEach((input) => {
+      input.addEventListener("input", () => updateImageBlockFromCard(codeBlock, card));
+    });
+    card.querySelector(".fuwari-image-card-pick")?.addEventListener("click", () => {
+      (card.querySelector(".fuwari-image-card-file") as HTMLInputElement | null)?.click();
+    });
+    card.querySelector(".fuwari-image-card-file")?.addEventListener("change", () => selectImageFile(codeBlock, card));
+    card.querySelector(".fuwari-image-card-delete")?.addEventListener("click", () => deleteCodeBlock(codeBlock));
+    return card;
+  }
+
+  function updateImageCard(codeBlock: Element, card: HTMLDivElement) {
+    const image = parseImageBlock(getCodeBlockNodeText(codeBlock));
+    const srcInput = card.querySelector(".fuwari-image-card-src") as HTMLInputElement | null;
+    const noteInput = card.querySelector(".fuwari-image-card-note-input") as HTMLInputElement | null;
+    if (srcInput && document.activeElement !== srcInput) srcInput.value = image.src;
+    if (noteInput && document.activeElement !== noteInput) noteInput.value = imageNote(image);
+
+    const img = card.querySelector("img") as HTMLImageElement | null;
+    const pickButton = card.querySelector(".fuwari-image-card-pick") as HTMLButtonElement | null;
+    const status = card.querySelector(".fuwari-image-card-status") as HTMLSpanElement | null;
+    const pendingImage = pendingImages.get(image.src);
+    const previewSrc = pendingImage?.objectUrl || image.src;
+    const showFallback = !pendingImage && (isImagePlaceholder(image.src) || card.dataset.failedSrc === image.src);
+    if (card.dataset.failedSrc && card.dataset.failedSrc !== image.src) card.dataset.failedSrc = "";
+    card.toggleAttribute("data-has-image", !showFallback);
+    if (pickButton) pickButton.textContent = pendingImage ? "更换图片" : "选择图片";
+    if (status) status.textContent = pendingImage ? "未上传，仅本地预览" : "";
+    if (img) {
+      img.alt = image.alt || image.caption;
+      if (!showFallback && img.getAttribute("src") !== previewSrc) img.src = previewSrc;
+      if (showFallback) img.removeAttribute("src");
+    }
+  }
+
+  function selectImageFile(codeBlock: Element, card: HTMLDivElement) {
+    const input = card.querySelector(".fuwari-image-card-file") as HTMLInputElement | null;
+    const file = input?.files?.[0];
+    if (!input || !file) return;
+    if (!file.type.startsWith("image/")) {
+      const status = card.querySelector(".fuwari-image-card-status") as HTMLSpanElement | null;
+      if (status) status.textContent = "请选择图片文件";
+      input.value = "";
+      return;
+    }
+    const src = safeImageSrc(file.name);
+    const objectUrl = URL.createObjectURL(file);
+    const note = (card.querySelector(".fuwari-image-card-note-input") as HTMLInputElement | null)?.value ?? defaultImageBlock.caption;
+    updateImageBlockText(codeBlock, serializeImageBlock({ src, alt: note, caption: note }));
+    dispatch("selectImage", { src, objectUrl, name: file.name, size: file.size, type: file.type });
+    input.value = "";
+  }
+
+  function getCodeBlockNodeText(codeBlock: Element) {
+    let text = codeBlockText(codeBlock);
+    crepe?.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const found = findCodeBlockPosition(view, codeBlock);
+      if (found) text = found.node.textContent;
+    });
+    return text;
+  }
+
+  function updateImageBlockFromCard(codeBlock: Element, card: Element) {
+    const src = (card.querySelector(".fuwari-image-card-src") as HTMLInputElement | null)?.value ?? "";
+    const note = (card.querySelector(".fuwari-image-card-note-input") as HTMLInputElement | null)?.value ?? defaultImageBlock.caption;
+    updateImageBlockText(codeBlock, serializeImageBlock({ src, alt: note, caption: note }));
+  }
+
+  function updateImageBlockText(codeBlock: Element, text: string) {
+    crepe?.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const found = findCodeBlockPosition(view, codeBlock);
+      const codeBlockNode = view.state.schema.nodes.code_block;
+      if (!found || !codeBlockNode) return;
+      const nextNode = codeBlockNode.create({ ...found.node.attrs, language: "image" }, view.state.schema.text(text));
+      view.dispatch(view.state.tr.replaceWith(found.pos, found.pos + found.node.nodeSize, nextNode));
+    });
+  }
+
+  function deleteCodeBlock(codeBlock: Element) {
+    crepe?.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const found = findCodeBlockPosition(view, codeBlock);
+      if (!found) return;
+      view.dispatch(view.state.tr.delete(found.pos, found.pos + found.node.nodeSize).scrollIntoView());
+      view.focus();
     });
   }
 
@@ -346,20 +523,13 @@
       const { schema } = view.state;
       const p = schema.nodes.paragraph;
       const blockquote = schema.nodes.blockquote;
-      const image = schema.nodes.image;
       const text = (value: string) => schema.text(value);
       const paragraph = (...content: any[]) => p.create(null, content);
       const nodes = {
         note: () => [blockquote.create(null, [paragraph(text("提示标题")), paragraph(text("写下关键提示或补充说明。"))])],
         warning: () => [blockquote.create(null, [paragraph(text("注意事项")), paragraph(text("说明风险、限制或需要读者特别留意的地方。"))])],
-        figure: () => image ? [paragraph(image.create({ src: "./image.png", alt: "图片说明", title: null })), paragraph(schema.marks.emphasis ? text("图片说明").mark([schema.marks.emphasis.create()]) : text("图片说明"))] : [paragraph(text("图片说明"))],
-        gallery: () => image ? [
-          paragraph(image.create({ src: "./a.png", alt: "图 1", title: null })),
-          paragraph(image.create({ src: "./b.png", alt: "图 2", title: null })),
-          paragraph(image.create({ src: "./c.png", alt: "图 3", title: null })),
-          paragraph(schema.marks.emphasis ? text("图片组说明").mark([schema.marks.emphasis.create()]) : text("图片组说明")),
-        ] : [paragraph(text("图片组说明"))],
-        video: () => [paragraph(schema.marks.link ? text("视频说明或标题").mark([schema.marks.link.create({ href: "https://" })]) : text("视频说明或标题"))],
+        figure: () => [schema.nodes.code_block.create({ language: "image" }, schema.text(serializeImageBlock()))],
+        video: () => [schema.nodes.code_block.create({ language: "video" }, schema.text("src: https://www.youtube.com/embed/VIDEO_ID\nnote: 视频注记"))],
         evidence: () => [blockquote.create(null, [paragraph(text("证据")), paragraph(text("来源、观察或支撑结论的材料。"))])],
       }[kind]();
       insertAfterCurrentBlock(view, nodes);
@@ -574,12 +744,204 @@
   }
   .milkdown-root :global(.milkdown-code-block) {
     position: relative;
-    margin: 1rem 0;
+    margin: 1rem 0 2.9rem;
     border: 1px solid rgb(255 255 255 / 0.075);
     border-radius: 0.78rem;
     background: rgb(13 17 23 / 0.58);
     overflow: visible;
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.025);
+  }
+  .milkdown-root :global(.milkdown-code-block .cm-editor) {
+    border-radius: 0.78rem;
+    overflow: hidden;
+  }
+  .milkdown-root :global(.milkdown-code-block .cm-editor),
+  .milkdown-root :global(.milkdown-code-block .cm-scroller),
+  .milkdown-root :global(.milkdown-code-block .cm-gutters) {
+    background: transparent !important;
+  }
+  .milkdown-root :global(.milkdown-code-block .cm-activeLine),
+  .milkdown-root :global(.milkdown-code-block .cm-activeLineGutter) {
+    background: rgb(255 255 255 / 0.035) !important;
+  }
+  .milkdown-root :global(.milkdown-code-block .cm-gutters) {
+    border-right-color: rgb(255 255 255 / 0.055) !important;
+  }
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-video]),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-image]) {
+    margin-bottom: 1rem;
+  }
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-image]) {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-video] .fuwari-language-input),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-video] .fuwari-language-suggestions),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-image] .fuwari-language-input),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-image] .fuwari-language-suggestions) {
+    display: none !important;
+  }
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-video]::before),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-image]::before) {
+    content: attr(data-fuwari-language);
+    position: absolute;
+    top: 0.62rem;
+    left: 0.74rem;
+    z-index: 4;
+    border: 1px solid rgb(255 255 255 / 0.08);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.06);
+    padding: 0.16rem 0.48rem;
+    color: rgb(255 255 255 / 0.52);
+    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+    font-size: 0.68rem;
+    font-weight: 850;
+  }
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-video] .cm-editor) {
+    padding-top: 2.2rem;
+  }
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-image] .cm-editor) {
+    position: absolute;
+    inset: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-image]::before) {
+    display: none;
+  }
+  .milkdown-root :global(.milkdown-code-block .fuwari-image-card) {
+    display: grid;
+    grid-template-columns: 4.4rem minmax(0, 1fr) 1.8rem;
+    align-items: center;
+    gap: 0.7rem;
+    border: 1px solid rgb(255 255 255 / 0.075);
+    border-radius: 0.78rem;
+    background: rgb(255 255 255 / 0.03);
+    padding: 0.46rem;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.02);
+  }
+  .milkdown-root :global(.fuwari-image-card-preview) {
+    position: relative;
+    width: 4.4rem;
+    aspect-ratio: 4 / 3;
+    border: 1px dashed rgb(255 255 255 / 0.12);
+    border-radius: 0.58rem;
+    background: rgb(0 0 0 / 0.18);
+    overflow: hidden;
+  }
+  .milkdown-root :global(.fuwari-image-card-preview img) {
+    display: none;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .milkdown-root :global(.fuwari-image-card[data-has-image] .fuwari-image-card-preview img) {
+    display: block;
+  }
+  .milkdown-root :global(.fuwari-image-card[data-has-image] .fuwari-image-card-fallback) {
+    display: none;
+  }
+  .milkdown-root :global(.fuwari-image-card-fallback) {
+    display: grid;
+    place-items: center;
+    height: 100%;
+    color: rgb(255 255 255 / 0.36);
+  }
+  .milkdown-root :global(.fuwari-image-card-fallback span) {
+    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+    font-size: 0.58rem;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+  }
+  .milkdown-root :global(.fuwari-image-card-body) {
+    display: grid;
+    gap: 0.38rem;
+    min-width: 0;
+  }
+  .milkdown-root :global(.fuwari-image-card-fields) {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 0.48rem;
+    min-width: 0;
+  }
+  .milkdown-root :global(.fuwari-image-card-fields label) {
+    display: grid;
+    gap: 0.18rem;
+    min-width: 0;
+    color: rgb(255 255 255 / 0.34);
+    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+    font-size: 0.56rem;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .milkdown-root :global(.fuwari-image-card-fields input) {
+    min-width: 0;
+    border: 1px solid rgb(255 255 255 / 0.08);
+    border-radius: 0.46rem;
+    background: rgb(0 0 0 / 0.15);
+    padding: 0.4rem 0.5rem;
+    color: rgb(255 255 255 / 0.74);
+    font: 500 0.76rem/1.25 inherit;
+    letter-spacing: 0;
+    text-transform: none;
+    outline: none;
+  }
+  .milkdown-root :global(.fuwari-image-card-fields input:focus) {
+    border-color: color-mix(in oklch, var(--primary) 48%, white 8%);
+    background: rgb(255 255 255 / 0.045);
+  }
+  .milkdown-root :global(.fuwari-image-card-actions) {
+    display: flex;
+    align-items: center;
+    gap: 0.48rem;
+    min-width: 0;
+  }
+  .milkdown-root :global(.fuwari-image-card-file) {
+    display: none;
+  }
+  .milkdown-root :global(.milkdown-code-block .fuwari-image-card-pick) {
+    min-height: 1.54rem;
+    border-radius: 999px;
+    padding: 0 0.58rem;
+    color: rgb(255 255 255 / 0.58);
+    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+    font-size: 0.62rem;
+    font-weight: 850;
+    white-space: nowrap;
+    box-shadow: none;
+  }
+  .milkdown-root :global(.milkdown-code-block .fuwari-image-card-pick:hover) {
+    border-color: color-mix(in oklch, var(--primary) 38%, transparent);
+    background: rgb(255 255 255 / 0.06);
+    color: rgb(255 255 255 / 0.8);
+  }
+  .milkdown-root :global(.fuwari-image-card-status) {
+    min-width: 0;
+    color: color-mix(in oklch, var(--primary) 52%, rgb(255 255 255 / 0.38));
+    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+    font-size: 0.62rem;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .milkdown-root :global(.fuwari-image-card-delete) {
+    width: 1.78rem;
+    height: 1.78rem;
+    border-radius: 999px;
+    color: rgb(255 255 255 / 0.38);
+    font-size: 1.05rem;
+    box-shadow: none;
+  }
+  .milkdown-root :global(.fuwari-image-card-delete:hover) {
+    border-color: color-mix(in oklch, #ff6b6b 42%, transparent);
+    background: rgb(255 107 107 / 0.1);
+    color: rgb(255 210 210 / 0.9);
   }
   .milkdown-root :global(.milkdown-code-block .tools) {
     position: static !important;
@@ -819,5 +1181,22 @@
   .milkdown-root :global(.ProseMirror blockquote) {
     border-left: 3px solid var(--primary);
     color: rgb(255 255 255 / 0.6);
+  }
+  @media (max-width: 760px) {
+    .milkdown-root :global(.milkdown-code-block .fuwari-image-card) {
+      grid-template-columns: 3.6rem minmax(0, 1fr) 1.8rem;
+      gap: 0.48rem;
+    }
+    .milkdown-root :global(.fuwari-image-card-preview) {
+      width: 3.6rem;
+    }
+    .milkdown-root :global(.fuwari-image-card-fields) {
+      grid-template-columns: 1fr;
+    }
+    .milkdown-root :global(.fuwari-image-card-actions) {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 0.28rem;
+    }
   }
 </style>

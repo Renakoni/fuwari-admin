@@ -2,7 +2,7 @@
   import { createEventDispatcher } from "svelte";
 
   type ToolAction = "h2" | "bold" | "italic" | "link" | "code" | "quote" | "bullet" | "ordered";
-  type FuwariBlockKind = "note" | "warning" | "figure" | "gallery" | "video" | "evidence";
+  type FuwariBlockKind = "note" | "warning" | "figure" | "video" | "evidence";
 
   export let tools: Array<{ label: string; icon: string; hint: string; action: ToolAction }> = [];
   export let blocks: Array<{ label: string; icon: string; description: string; kind: FuwariBlockKind; syntax: string }> = [];

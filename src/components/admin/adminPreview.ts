@@ -1,11 +1,12 @@
+import { parseImageBlock } from "./imageBlock";
+
 export type PreviewBlock =
   | { type: "heading"; text: string }
   | { type: "paragraph"; text: string }
   | { type: "code"; lang: string; code: string }
   | { type: "callout"; label: string; body: string }
   | { type: "figure"; label: string; body: string; src?: string }
-  | { type: "gallery"; label: string; body: string; images?: string[] }
-  | { type: "video"; label: string; body: string; href?: string }
+  | { type: "video"; label: string; body: string; href?: string; embedSrc?: string; title?: string; note?: string }
   | { type: "evidence"; label: string; body: string };
 
 function escapeHtml(value: string): string {
@@ -90,9 +91,11 @@ function parseMarkdownImage(line: string) {
   return match ? { alt: match[1] || "Image", src: match[2] } : null;
 }
 
-function parseMarkdownLink(line: string) {
-  const match = line.trim().match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-  return match ? { label: match[1], href: match[2] } : null;
+function parseVideoDirectiveBody(body: string) {
+  const src = body.match(/^src:\s*(.+)$/im)?.[1]?.trim();
+  const note = body.match(/^note:\s*(.+)$/im)?.[1]?.trim() || "";
+  if (!src || !/^https?:\/\//i.test(src)) return null;
+  return { src, note };
 }
 
 export function parsePreviewBlocks(markdown: string): PreviewBlock[] {
@@ -110,7 +113,27 @@ export function parsePreviewBlocks(markdown: string): PreviewBlock[] {
         code.push(lines[index]);
       }
       if (index + 1 < lines.length) index += 1;
-      blocks.push({ type: "code", lang, code: code.join("\n") });
+      const codeText = code.join("\n");
+      if (lang.toLowerCase() === "video") {
+        const video = parseVideoDirectiveBody(codeText);
+        if (video) {
+          blocks.push({
+            type: "video",
+            label: video.note || "Video",
+            body: video.src,
+            embedSrc: video.src,
+            title: video.note || "Video player",
+            note: video.note,
+          });
+          continue;
+        }
+      }
+      if (lang.toLowerCase() === "image") {
+        const image = parseImageBlock(codeText);
+        blocks.push({ type: "figure", label: image.caption, body: image.alt, src: image.src });
+        continue;
+      }
+      blocks.push({ type: "code", lang, code: codeText });
       continue;
     }
     const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
@@ -141,33 +164,10 @@ export function parsePreviewBlocks(markdown: string): PreviewBlock[] {
       blocks.push({ type: "figure", label: getDirectiveLabel(trimmed, "Figure"), body: result.body });
       continue;
     }
-    if (trimmed.startsWith(":::gallery")) {
-      const result = readDirectiveBody(lines, index);
-      index = result.index;
-      blocks.push({ type: "gallery", label: getDirectiveLabel(trimmed, "Gallery"), body: result.body });
-      continue;
-    }
     if (trimmed.startsWith(":::evidence")) {
       const result = readDirectiveBody(lines, index);
       index = result.index;
       blocks.push({ type: "evidence", label: getDirectiveLabel(trimmed, "Evidence"), body: result.body });
-      continue;
-    }
-    if (trimmed.startsWith("::video")) {
-      const href = trimmed.match(/src="([^"]+)"/)?.[1];
-      blocks.push({ type: "video", label: getDirectiveLabel(trimmed, "Video"), body: href || "Video embed", href });
-      continue;
-    }
-    const galleryImages: string[] = [];
-    let galleryIndex = index;
-    while (parseMarkdownImage(lines[galleryIndex]?.trim() || "")) {
-      galleryImages.push(parseMarkdownImage(lines[galleryIndex].trim())!.src);
-      galleryIndex += 1;
-    }
-    if (galleryImages.length > 1) {
-      const caption = lines[galleryIndex]?.trim().match(/^\*(.+)\*$/)?.[1];
-      index = caption ? galleryIndex : galleryIndex - 1;
-      blocks.push({ type: "gallery", label: caption || "Gallery", body: caption || `${galleryImages.length} images`, images: galleryImages });
       continue;
     }
     const image = parseMarkdownImage(trimmed);
@@ -176,11 +176,6 @@ export function parsePreviewBlocks(markdown: string): PreviewBlock[] {
       const caption = next?.match(/^\*(.+)\*$/)?.[1];
       if (caption) index += 1;
       blocks.push({ type: "figure", label: caption || image.alt, body: image.alt, src: image.src });
-      continue;
-    }
-    const link = parseMarkdownLink(trimmed);
-    if (link && /^https?:\/\//.test(link.href)) {
-      blocks.push({ type: "video", label: link.label, body: link.href, href: link.href });
       continue;
     }
     if (!trimmed.startsWith(":::")) {
