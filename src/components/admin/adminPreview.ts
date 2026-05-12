@@ -1,13 +1,14 @@
 import { parseImageBlock } from "./imageBlock";
 
+export type PreviewCalloutKind = "note" | "warning" | "proof";
+
 export type PreviewBlock =
   | { type: "heading"; text: string }
   | { type: "paragraph"; text: string }
   | { type: "code"; lang: string; code: string }
-  | { type: "callout"; label: string; body: string }
+  | { type: "callout"; kind: PreviewCalloutKind; label: string; body: string }
   | { type: "figure"; label: string; body: string; src?: string }
-  | { type: "video"; label: string; body: string; href?: string; embedSrc?: string; title?: string; note?: string }
-  | { type: "evidence"; label: string; body: string };
+  | { type: "video"; label: string; body: string; href?: string; embedSrc?: string; title?: string; note?: string };
 
 function escapeHtml(value: string): string {
   return value
@@ -98,6 +99,13 @@ function parseVideoDirectiveBody(body: string) {
   return { src, note };
 }
 
+function parseCalloutBlockBody(body: string, fallbackLabel: string) {
+  const lines = body.split("\n");
+  const titleLine = lines[0]?.match(/^title:\s*(.+)$/i);
+  if (!titleLine) return { label: fallbackLabel, body: body.trim() };
+  return { label: titleLine[1].trim() || fallbackLabel, body: lines.slice(1).join("\n").trim() };
+}
+
 export function parsePreviewBlocks(markdown: string): PreviewBlock[] {
   const blocks: PreviewBlock[] = [];
   const lines = markdown.split("\n");
@@ -133,6 +141,13 @@ export function parsePreviewBlocks(markdown: string): PreviewBlock[] {
         blocks.push({ type: "figure", label: image.caption, body: image.alt, src: image.src });
         continue;
       }
+      if (["note", "warning", "proof"].includes(lang.toLowerCase())) {
+        const kind = lang.toLowerCase() as PreviewCalloutKind;
+        const fallback = kind === "warning" ? "Warning" : kind === "proof" ? "Proof" : "Note";
+        const callout = parseCalloutBlockBody(codeText, fallback);
+        blocks.push({ type: "callout", kind, label: callout.label, body: callout.body });
+        continue;
+      }
       blocks.push({ type: "code", lang, code: codeText });
       continue;
     }
@@ -148,14 +163,17 @@ export function parsePreviewBlocks(markdown: string): PreviewBlock[] {
         index += 1;
         content.push(cleanBlockquoteLine(lines[index]));
       }
-      const label = callout[2] || (callout[1].toUpperCase() === "WARNING" ? "Warning" : callout[1].toUpperCase() === "IMPORTANT" ? "Evidence" : "Note");
-      blocks.push({ type: callout[1].toUpperCase() === "IMPORTANT" ? "evidence" : "callout", label, body: content.join("\n").trim() });
+      const kind = callout[1].toUpperCase() === "WARNING" ? "warning" : callout[1].toUpperCase() === "IMPORTANT" ? "proof" : "note";
+      const label = callout[2] || (kind === "warning" ? "Warning" : kind === "proof" ? "Proof" : "Note");
+      blocks.push({ type: "callout", kind, label, body: content.join("\n").trim() });
       continue;
     }
     if (trimmed.startsWith(":::callout")) {
       const result = readDirectiveBody(lines, index);
       index = result.index;
-      blocks.push({ type: "callout", label: getDirectiveLabel(trimmed, "Note"), body: result.body });
+      const type = trimmed.match(/type="([^"]+)"/)?.[1]?.toLowerCase();
+      const kind = type === "warning" ? "warning" : type === "important" ? "proof" : "note";
+      blocks.push({ type: "callout", kind, label: getDirectiveLabel(trimmed, "Note"), body: result.body });
       continue;
     }
     if (trimmed.startsWith(":::figure")) {
@@ -167,7 +185,7 @@ export function parsePreviewBlocks(markdown: string): PreviewBlock[] {
     if (trimmed.startsWith(":::evidence")) {
       const result = readDirectiveBody(lines, index);
       index = result.index;
-      blocks.push({ type: "evidence", label: getDirectiveLabel(trimmed, "Evidence"), body: result.body });
+      blocks.push({ type: "callout", kind: "proof", label: getDirectiveLabel(trimmed, "Proof"), body: result.body });
       continue;
     }
     const image = parseMarkdownImage(trimmed);

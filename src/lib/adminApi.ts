@@ -39,3 +39,10 @@ export function saveRemoteDraft(editor: EditorState): Promise<{ path: string; sh
     body: JSON.stringify({ editor }),
   });
 }
+
+export function publishContent(editor: EditorState): Promise<{ path: string; sha: string; commitUrl: string }> {
+  return apiFetch<{ path: string; sha: string; commitUrl: string }>("/api/content", {
+    method: "PUT",
+    body: JSON.stringify({ editor }),
+  });
+}

@@ -7,8 +7,10 @@
   export let pendingImageCount = 0;
   export let saveMessage = "";
   export let saveState: "idle" | "saving" | "saved" | "blocked" | "error" = "idle";
+  export let commitDisabled = false;
+  export let commitLabel = "Commit";
 
-  const dispatch = createEventDispatcher<{ modeChange: "write" | "preview"; save: void }>();
+  const dispatch = createEventDispatcher<{ modeChange: "write" | "preview"; save: void; commit: void }>();
 </script>
 
 <header class="composer-top card-base">
@@ -24,7 +26,7 @@
       <button class:active={mode === item} type="button" on:click={() => dispatch("modeChange", item as "write" | "preview")}>{item}</button>
     {/each}
     <button class="save" type="button" disabled={saveState === "saving"} on:click={() => dispatch("save")}>{saveState === "saving" ? "Saving" : "Save"}</button>
-    <button class="commit" type="button" disabled title="Publish commit is not wired yet.">Commit</button>
+    <button class="commit" type="button" disabled={commitDisabled} on:click={() => dispatch("commit")}>{commitLabel}</button>
   </div>
 </header>
 

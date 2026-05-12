@@ -85,9 +85,19 @@
         <pre><code>{@html highlightedCode(block)}</code></pre>
       </figure>
     {:else if block.type === "callout"}
-      <aside class="preview-directive preview-directive--callout">
-        <span>Callout</span>
-        <strong>{block.label}</strong>
+      <aside class={`preview-callout preview-callout--${block.kind}`}>
+        <div class="preview-callout-title">
+          <span class="preview-callout-icon" aria-hidden="true">
+            {#if block.kind === "warning"}
+              <svg viewBox="0 0 16 16"><path d="M8.64 1.55a.74.74 0 0 0-1.28 0L1.15 12.78A.8.8 0 0 0 1.82 14h12.36a.8.8 0 0 0 .67-1.22L8.64 1.55ZM8 5.1c.42 0 .75.33.75.75v3.1a.75.75 0 0 1-1.5 0v-3.1c0-.42.33-.75.75-.75Zm0 6.7a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8Z"/></svg>
+            {:else if block.kind === "proof"}
+              <svg viewBox="0 0 16 16"><path d="M2.5 2.25A1.25 1.25 0 0 1 3.75 1h8.5a1.25 1.25 0 0 1 1.25 1.25v7.5A1.25 1.25 0 0 1 12.25 11H8.32l-3.13 3.13A.7.7 0 0 1 4 13.64V11h-.25A1.25 1.25 0 0 1 2.5 9.75v-7.5Zm5.5 1.5c-.42 0-.75.33-.75.75v2.25c0 .42.33.75.75.75s.75-.33.75-.75V4.5c0-.42-.33-.75-.75-.75Zm0 5.55a.85.85 0 1 0 0-1.7.85.85 0 0 0 0 1.7Z"/></svg>
+            {:else}
+              <svg viewBox="0 0 16 16"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM7.25 7.75A.75.75 0 0 1 8 7h.25a.75.75 0 0 1 .75.75V11h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25V8.5H7.25a.75.75 0 0 1-.75-.75ZM8 5.9a.95.95 0 1 1 0-1.9.95.95 0 0 1 0 1.9Z"/></svg>
+            {/if}
+          </span>
+          <strong>{block.label}</strong>
+        </div>
         {#if block.body}<p>{block.body}</p>{/if}
       </aside>
     {:else if block.type === "figure"}
@@ -108,12 +118,6 @@
           <iframe src={block.embedSrc} title={block.title || block.label} loading="lazy" allowfullscreen></iframe>
           {#if block.note}<p>{block.note}</p>{/if}
         {/if}
-      </section>
-    {:else if block.type === "evidence"}
-      <section class="preview-directive preview-directive--evidence">
-        <span>Evidence</span>
-        <strong>{block.label}</strong>
-        {#if block.body}<p>{block.body}</p>{/if}
       </section>
     {/if}
   {/each}
@@ -234,48 +238,65 @@
   :global(.code-token--variable) {
     color: #ffa657;
   }
-  .preview-directive {
+  .preview-callout {
+    --callout-color: oklch(0.75 0.14 250);
     position: relative;
-    margin: 1rem 0;
-    max-width: 48rem;
+    margin: 1.08rem 0;
+    max-width: 52rem;
     border: 1px solid rgb(255 255 255 / 0.075);
-    border-radius: 1rem;
+    border-left: 4px solid var(--callout-color);
+    border-radius: 1.15rem;
     background:
-      radial-gradient(circle at 0% 0%, color-mix(in oklch, var(--primary) 12%, transparent), transparent 42%),
-      rgb(255 255 255 / 0.032);
-    padding: 0.9rem 1rem;
+      radial-gradient(circle at 0% 0%, color-mix(in oklch, var(--callout-color) 13%, transparent), transparent 40%),
+      rgb(255 255 255 / 0.045);
+    padding: 1rem 1.1rem 1.12rem 1.2rem;
     overflow: hidden;
+    box-shadow: 0 18px 45px rgb(0 0 0 / 0.16);
   }
-  .preview-directive span {
-    display: block;
-    margin-bottom: 0.26rem;
-    color: rgb(255 255 255 / 0.34);
+  .preview-callout--warning {
+    --callout-color: oklch(0.78 0.15 75);
+  }
+  .preview-callout--proof {
+    --callout-color: oklch(0.75 0.15 310);
+  }
+  .preview-callout-title {
+    display: flex;
+    align-items: center;
+    gap: 0.58rem;
+    color: var(--callout-color);
     font-family: "JetBrains Mono Variable", ui-monospace, monospace;
-    font-size: 0.58rem;
+    font-size: 0.78rem;
     font-weight: 900;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
   }
-  .preview-directive strong {
+  .preview-callout-icon {
+    display: inline-grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 1.08rem;
+    height: 1.08rem;
+    line-height: 1;
+  }
+  .preview-callout-icon svg {
     display: block;
-    color: rgb(255 255 255 / 0.86);
-    font-size: 1rem;
-    font-weight: 900;
-    letter-spacing: -0.025em;
+    width: 1.08rem;
+    height: 1.08rem;
+    fill: currentColor;
   }
-  .preview-directive p {
-    margin: 0.42rem 0 0;
-    color: rgb(255 255 255 / 0.58);
-    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
-    font-size: 0.76rem;
-    line-height: 1.65;
+  .preview-callout strong {
+    color: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+  }
+  .preview-callout p {
+    margin: 0.72rem 0 0;
+    max-width: 46rem;
+    color: rgb(255 255 255 / 0.72);
+    font-size: 0.98rem;
+    font-weight: 650;
+    line-height: 1.7;
     white-space: pre-wrap;
-  }
-  .preview-directive--callout {
-    border-color: color-mix(in oklch, var(--primary) 24%, transparent);
-  }
-  .preview-directive--evidence {
-    border-left: 3px solid color-mix(in oklch, var(--primary) 52%, transparent);
   }
   .preview-figure-block {
     position: relative;

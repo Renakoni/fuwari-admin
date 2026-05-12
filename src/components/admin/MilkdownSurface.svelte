@@ -207,8 +207,10 @@
   function syncCopyButtons() {
     root?.querySelectorAll(".milkdown-code-block").forEach((codeBlock) => {
       const language = getCodeBlockLanguage(codeBlock).trim().toLowerCase();
+      const isCalloutBlock = ["note", "warning", "proof"].includes(language);
       codeBlock.toggleAttribute("data-fuwari-video", language === "video");
       codeBlock.toggleAttribute("data-fuwari-image", language === "image");
+      codeBlock.toggleAttribute("data-fuwari-callout", isCalloutBlock);
       codeBlock.setAttribute("data-fuwari-language", language || "text");
       if (language === "image") {
         codeBlock.querySelector(".fuwari-copy-button")?.remove();
@@ -512,7 +514,10 @@
   function insertAfterCurrentBlock(view: any, nodes: any[]) {
     const { $from, to } = view.state.selection;
     const insertAt = $from.depth > 0 ? $from.after($from.depth) : to;
-    view.dispatch(view.state.tr.insert(insertAt, Fragment.fromArray(nodes)).scrollIntoView());
+    const fragment = Fragment.fromArray(nodes);
+    const tr = view.state.tr.insert(insertAt, fragment);
+    const cursor = Math.min(insertAt + fragment.size, tr.doc.content.size);
+    view.dispatch(tr.setSelection(TextSelection.near(tr.doc.resolve(cursor))).scrollIntoView());
     view.focus();
   }
 
@@ -521,16 +526,13 @@
     crepe.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx);
       const { schema } = view.state;
-      const p = schema.nodes.paragraph;
-      const blockquote = schema.nodes.blockquote;
-      const text = (value: string) => schema.text(value);
-      const paragraph = (...content: any[]) => p.create(null, content);
+      const codeBlock = schema.nodes.code_block;
       const nodes = {
-        note: () => [blockquote.create(null, [paragraph(text("提示标题")), paragraph(text("写下关键提示或补充说明。"))])],
-        warning: () => [blockquote.create(null, [paragraph(text("注意事项")), paragraph(text("说明风险、限制或需要读者特别留意的地方。"))])],
-        figure: () => [schema.nodes.code_block.create({ language: "image" }, schema.text(serializeImageBlock()))],
-        video: () => [schema.nodes.code_block.create({ language: "video" }, schema.text("src: https://www.youtube.com/embed/VIDEO_ID\nnote: 视频注记"))],
-        evidence: () => [blockquote.create(null, [paragraph(text("证据")), paragraph(text("来源、观察或支撑结论的材料。"))])],
+        note: () => [codeBlock.create({ language: "note" }, schema.text("title: 提示标题\n写下关键提示或补充说明。"))],
+        warning: () => [codeBlock.create({ language: "warning" }, schema.text("title: 注意事项\n说明风险、限制或需要读者特别留意的地方。"))],
+        figure: () => [codeBlock.create({ language: "image" }, schema.text(serializeImageBlock()))],
+        video: () => [codeBlock.create({ language: "video" }, schema.text("src: https://www.youtube.com/embed/VIDEO_ID\nnote: 视频注记"))],
+        evidence: () => [codeBlock.create({ language: "proof" }, schema.text("title: 证据\n来源、观察或支撑结论的材料。"))],
       }[kind]();
       insertAfterCurrentBlock(view, nodes);
     });
@@ -768,7 +770,8 @@
     border-right-color: rgb(255 255 255 / 0.055) !important;
   }
   .milkdown-root :global(.milkdown-code-block[data-fuwari-video]),
-  .milkdown-root :global(.milkdown-code-block[data-fuwari-image]) {
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-image]),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout]) {
     margin-bottom: 1rem;
   }
   .milkdown-root :global(.milkdown-code-block[data-fuwari-image]) {
@@ -779,11 +782,14 @@
   .milkdown-root :global(.milkdown-code-block[data-fuwari-video] .fuwari-language-input),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-video] .fuwari-language-suggestions),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-image] .fuwari-language-input),
-  .milkdown-root :global(.milkdown-code-block[data-fuwari-image] .fuwari-language-suggestions) {
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-image] .fuwari-language-suggestions),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout] .fuwari-language-input),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout] .fuwari-language-suggestions) {
     display: none !important;
   }
   .milkdown-root :global(.milkdown-code-block[data-fuwari-video]::before),
-  .milkdown-root :global(.milkdown-code-block[data-fuwari-image]::before) {
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-image]::before),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout]::before) {
     content: attr(data-fuwari-language);
     position: absolute;
     top: 0.62rem;
@@ -798,8 +804,21 @@
     font-size: 0.68rem;
     font-weight: 850;
   }
-  .milkdown-root :global(.milkdown-code-block[data-fuwari-video] .cm-editor) {
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-video] .cm-editor),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout] .cm-editor) {
     padding-top: 2.2rem;
+  }
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout]) {
+    border-color: color-mix(in oklch, var(--primary) 22%, transparent);
+    background:
+      radial-gradient(circle at 0% 0%, color-mix(in oklch, var(--primary) 10%, transparent), transparent 42%),
+      rgb(13 17 23 / 0.62);
+  }
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-language="warning"]) {
+    --primary: oklch(0.78 0.15 75);
+  }
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-language="proof"]) {
+    --primary: oklch(0.75 0.15 310);
   }
   .milkdown-root :global(.milkdown-code-block[data-fuwari-image] .cm-editor) {
     position: absolute;

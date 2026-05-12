@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { loadConfig } from "./config.js";
-import { loadContentEntries } from "./content.js";
+import { loadContentEntries, publishEditor } from "./content.js";
 import { listRemoteDrafts, saveRemoteDraft } from "./drafts.js";
 
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -76,6 +76,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   const routes: Record<string, RouteHandler> = {
     "GET /api/health": () => ({ ok: true }),
     "GET /api/content": () => loadContentEntries(config),
+    "PUT /api/content": async (req) => publishEditor(config, await readJson(req)),
     "GET /api/drafts": () => listRemoteDrafts(config),
     "PUT /api/drafts": async (req) => saveRemoteDraft(config, await readJson(req)),
   };

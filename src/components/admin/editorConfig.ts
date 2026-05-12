@@ -19,18 +19,18 @@ export const tools: EditorTool[] = [
 ];
 
 export const blocks: EditorBlock[] = [
-  { label: "Note", icon: "!", description: "提示块", kind: "note", syntax: "\n> [!NOTE] 提示标题\n> 写下关键提示或补充说明。\n" },
-  { label: "Warn", icon: "△", description: "警告块", kind: "warning", syntax: "\n> [!WARNING] 注意事项\n> 说明风险、限制或需要读者特别留意的地方。\n" },
+  { label: "Note", icon: "!", description: "提示块", kind: "note", syntax: "\n```note\ntitle: 提示标题\n写下关键提示或补充说明。\n```\n" },
+  { label: "Warn", icon: "△", description: "警告块", kind: "warning", syntax: "\n```warning\ntitle: 注意事项\n说明风险、限制或需要读者特别留意的地方。\n```\n" },
   { label: "Fig", icon: "▧", description: "单图", kind: "figure", syntax: imageBlockMarkdown() },
   { label: "Video", icon: "▶", description: "视频", kind: "video", syntax: "\n```video\nsrc: https://www.youtube.com/embed/VIDEO_ID\nnote: 视频注记\n```\n" },
-  { label: "Proof", icon: "※", description: "证据", kind: "evidence", syntax: "\n> [!IMPORTANT] 证据\n> 来源、观察或支撑结论的材料。\n" },
+  { label: "Proof", icon: "※", description: "证据", kind: "evidence", syntax: "\n```proof\ntitle: 证据\n来源、观察或支撑结论的材料。\n```\n" },
 ];
 
 export const slashItems: SlashItem[] = [
   { label: "Heading 2", hint: "小节标题", syntax: "\n## 小节标题\n\n" },
-  { label: "Note", hint: "提示块", syntax: "\n> [!NOTE] 提示标题\n> 写下关键提示或补充说明。\n" },
-  { label: "Warning", hint: "警告块", syntax: "\n> [!WARNING] 注意事项\n> 说明风险、限制或需要读者特别留意的地方。\n" },
+  { label: "Note", hint: "提示块", syntax: "\n```note\ntitle: 提示标题\n写下关键提示或补充说明。\n```\n" },
+  { label: "Warning", hint: "警告块", syntax: "\n```warning\ntitle: 注意事项\n说明风险、限制或需要读者特别留意的地方。\n```\n" },
   { label: "Figure", hint: "单图", syntax: imageBlockMarkdown() },
   { label: "Video", hint: "视频", syntax: "\n```video\nsrc: https://www.youtube.com/embed/VIDEO_ID\nnote: 视频注记\n```\n" },
-  { label: "Evidence", hint: "证据材料", syntax: "\n> [!IMPORTANT] 证据\n> 来源、观察或支撑结论的材料。\n" },
+  { label: "Proof", hint: "证据材料", syntax: "\n```proof\ntitle: 证据\n来源、观察或支撑结论的材料。\n```\n" },
 ];

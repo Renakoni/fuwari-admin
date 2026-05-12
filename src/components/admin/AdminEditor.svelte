@@ -7,6 +7,7 @@
   import EditorTopBar from "./EditorTopBar.svelte";
   import MilkdownSurface from "./MilkdownSurface.svelte";
   import SlashMenu from "./SlashMenu.svelte";
+  import { publishContent } from "../../lib/adminApi";
   import { saveRemoteDraft as saveRemoteDraftToApi } from "../../lib/drafts";
   import { loadEditorDraft, saveEditorDraft } from "../../lib/storage";
   import { isImagePlaceholder } from "./imageBlock";
@@ -222,20 +223,24 @@
     return previewBlocks.filter((block) => block.type === "figure" && isImagePlaceholder(block.src || "") && !pendingImages.has(block.src || "")).length;
   }
 
-  async function saveRemoteDraft() {
-    const snapshot = syncEditorFromFields();
-    if (!snapshot) return;
+  function blockIfImagesNeedUpload(action: string): boolean {
     if (pendingImages.size > 0) {
       saveState = "blocked";
-      saveMessage = `${pendingImages.size} local image${pendingImages.size === 1 ? "" : "s"} must be uploaded before remote Save.`;
-      return;
+      saveMessage = `${pendingImages.size} local image${pendingImages.size === 1 ? "" : "s"} must be uploaded before ${action}.`;
+      return true;
     }
     const unresolvedImages = unresolvedRelativeImageCount();
     if (unresolvedImages > 0) {
       saveState = "blocked";
-      saveMessage = `${unresolvedImages} relative image${unresolvedImages === 1 ? "" : "s"} need upload or a remote URL before Save.`;
-      return;
+      saveMessage = `${unresolvedImages} relative image${unresolvedImages === 1 ? "" : "s"} need upload or a remote URL before ${action}.`;
+      return true;
     }
+    return false;
+  }
+
+  async function saveRemoteDraft() {
+    const snapshot = syncEditorFromFields();
+    if (!snapshot || blockIfImagesNeedUpload("remote Save")) return;
 
     saveState = "saving";
     saveMessage = "Saving remote draft...";
@@ -254,6 +259,31 @@
     }
   }
 
+  async function commitRemoteContent() {
+    const snapshot = syncEditorFromFields();
+    if (!snapshot || blockIfImagesNeedUpload("Commit")) return;
+
+    saveState = "saving";
+    saveMessage = "Publishing to GitHub...";
+    try {
+      snapshot.frontmatter = { ...snapshot.frontmatter, draft: false };
+      const published = await publishContent(snapshot);
+      snapshot.mode = "edit";
+      snapshot.path = published.path;
+      snapshot.sha = published.sha;
+      snapshot.frontmatter.draft = false;
+      editor = snapshot;
+      draft = false;
+      saveEditorDraft(snapshot);
+      lastSavedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      saveState = "saved";
+      saveMessage = "Published to GitHub. Remote draft was kept.";
+    } catch (caught) {
+      saveState = "error";
+      saveMessage = caught instanceof Error ? caught.message : "Failed to publish content.";
+    }
+  }
+
   function setMode(nextMode: ComposerMode) {
     mode = nextMode;
     if (nextMode === "preview") milkdownSurface = null;
@@ -261,7 +291,7 @@
 </script>
 
 <section class="composer-shell">
-  <EditorTopBar {draft} {lastSavedAt} {mode} pendingImageCount={pendingImages.size} {saveMessage} {saveState} on:modeChange={(event) => setMode(event.detail)} on:save={saveRemoteDraft} />
+  <EditorTopBar {draft} {lastSavedAt} {mode} pendingImageCount={pendingImages.size} {saveMessage} {saveState} commitDisabled={saveState === "saving"} commitLabel={saveState === "saving" && saveMessage.startsWith("Publishing") ? "Publishing" : "Commit"} on:modeChange={(event) => setMode(event.detail)} on:save={saveRemoteDraft} on:commit={commitRemoteContent} />
 
   <main class="composer-stage card-base">
     <section class="composer-hero">
