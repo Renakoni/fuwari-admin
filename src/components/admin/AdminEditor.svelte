@@ -7,7 +7,11 @@
   import EditorTopBar from "./EditorTopBar.svelte";
   import MilkdownSurface from "./MilkdownSurface.svelte";
   import SlashMenu from "./SlashMenu.svelte";
-  import { loadEditorDraft, saveEditorDraft } from "../../lib/storage";
+  import { draftPathForEditor, remoteDraftCommitMessage } from "../../lib/drafts";
+  import { readFileOrNull, writeFile } from "../../lib/github";
+  import { loadEditorDraft, loadSettings, saveEditorDraft } from "../../lib/storage";
+  import { stringifyPost } from "../../lib/frontmatter";
+  import { isImagePlaceholder } from "./imageBlock";
   import type { EditorState } from "../../types";
   import { parsePreviewBlocks } from "./adminPreview";
   import type { PreviewBlock } from "./adminPreview";
@@ -43,6 +47,8 @@
   let milkdownSurface: any;
   let copiedPreviewCode = "";
   let pendingImages = new Map<string, PendingImage>();
+  let saveState: "idle" | "saving" | "saved" | "blocked" | "error" = "idle";
+  let saveMessage = "";
 
   $: slashItems = allSlashItems.filter((item) => !slashQuery || `${item.label} ${item.hint}`.toLowerCase().includes(slashQuery.toLowerCase()));
 
@@ -63,7 +69,6 @@
     };
     editor.body = body;
     saveEditorDraft(editor);
-    lastSavedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 
   onMount(() => {
@@ -104,7 +109,31 @@
     pendingImages.forEach((image) => URL.revokeObjectURL(image.objectUrl));
   });
 
+  function syncEditorFromFields(): EditorState | null {
+    if (!editor) return null;
+    editor.frontmatter = {
+      ...editor.frontmatter,
+      title,
+      description,
+      category,
+      tags: tagList,
+      published,
+      draft,
+      image: cover,
+    };
+    editor.body = body;
+    return editor;
+  }
+
+  function markUnsaved() {
+    if (saveState === "saved") {
+      saveState = "idle";
+      saveMessage = "Remote draft has local changes.";
+    }
+  }
+
   function insertSyntax(syntax: string) {
+    markUnsaved();
     if (milkdownSurface) {
       milkdownSurface.insertMarkdown(syntax);
       return;
@@ -113,6 +142,7 @@
   }
 
   function wrapSelection(before: string, after: string) {
+    markUnsaved();
     if (milkdownSurface) {
       milkdownSurface.wrapSelection(before, after);
       return;
@@ -187,6 +217,50 @@
     const previous = pendingImages.get(event.detail.src);
     if (previous && previous.objectUrl !== event.detail.objectUrl) URL.revokeObjectURL(previous.objectUrl);
     pendingImages = new Map(pendingImages).set(event.detail.src, event.detail);
+    markUnsaved();
+  }
+
+  function unresolvedRelativeImageCount() {
+    return previewBlocks.filter((block) => block.type === "figure" && isImagePlaceholder(block.src || "") && !pendingImages.has(block.src || "")).length;
+  }
+
+  async function saveRemoteDraft() {
+    const snapshot = syncEditorFromFields();
+    if (!snapshot) return;
+    const settings = loadSettings();
+    if (!settings.owner.trim() || !settings.repo.trim() || !settings.token.trim()) {
+      saveState = "error";
+      saveMessage = "Configure GitHub settings before remote Save.";
+      return;
+    }
+    if (pendingImages.size > 0) {
+      saveState = "blocked";
+      saveMessage = `${pendingImages.size} local image${pendingImages.size === 1 ? "" : "s"} must be uploaded before remote Save.`;
+      return;
+    }
+    const unresolvedImages = unresolvedRelativeImageCount();
+    if (unresolvedImages > 0) {
+      saveState = "blocked";
+      saveMessage = `${unresolvedImages} relative image${unresolvedImages === 1 ? "" : "s"} need upload or a remote URL before Save.`;
+      return;
+    }
+
+    saveState = "saving";
+    saveMessage = "Saving remote draft...";
+    try {
+      snapshot.frontmatter = { ...snapshot.frontmatter, draft: true };
+      draft = true;
+      const path = draftPathForEditor(snapshot);
+      const existing = await readFileOrNull(settings, path);
+      await writeFile(settings, path, stringifyPost(snapshot.frontmatter, snapshot.body), remoteDraftCommitMessage(snapshot), existing?.sha);
+      saveEditorDraft(snapshot);
+      lastSavedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      saveState = "saved";
+      saveMessage = "Remote draft saved to GitHub.";
+    } catch (caught) {
+      saveState = "error";
+      saveMessage = caught instanceof Error ? caught.message : "Failed to save remote draft.";
+    }
   }
 
   function setMode(nextMode: ComposerMode) {
@@ -196,7 +270,7 @@
 </script>
 
 <section class="composer-shell">
-  <EditorTopBar {draft} {lastSavedAt} {mode} on:modeChange={(event) => setMode(event.detail)} />
+  <EditorTopBar {draft} {lastSavedAt} {mode} pendingImageCount={pendingImages.size} {saveMessage} {saveState} on:modeChange={(event) => setMode(event.detail)} on:save={saveRemoteDraft} />
 
   <main class="composer-stage card-base">
     <section class="composer-hero">
@@ -222,7 +296,7 @@
           <span>CREPE</span>
         </div>
         {#if editor}
-          <MilkdownSurface bind:this={milkdownSurface} value={body} {pendingImages} on:change={(event) => (body = event.detail)} on:slash={openSlashMenu} on:selectImage={selectPendingImage} />
+          <MilkdownSurface bind:this={milkdownSurface} value={body} {pendingImages} on:change={(event) => { markUnsaved(); body = event.detail; }} on:slash={openSlashMenu} on:selectImage={selectPendingImage} />
         {/if}
       </section>
     {/if}

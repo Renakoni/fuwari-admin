@@ -1,7 +1,8 @@
 <script lang="ts">
   import { editorForEntry, editorForNewPost, loadContentEntries } from "../../lib/content";
+  import { editorForRemoteDraft, listRemoteDrafts } from "../../lib/drafts";
   import { loadSettings, saveEditorDraft } from "../../lib/storage";
-  import type { ContentEntry } from "../../types";
+  import type { AdminSettings, ContentEntry } from "../../types";
 
   export let kind: "blog" | "note" = "blog";
 
@@ -11,6 +12,8 @@
   const emptyText = kind === "note" ? "还没有读取到 Notes。" : "还没有读取到 Blog 文章。";
 
   let entries: ContentEntry[] = [];
+  let remoteDrafts: ContentEntry[] = [];
+  let currentSettings: AdminSettings | null = null;
   let loading = true;
   let error = "";
 
@@ -42,21 +45,31 @@
     window.location.href = "/editor/";
   }
 
+  function openRemoteDraft(entry: ContentEntry) {
+    if (!currentSettings) return;
+    saveEditorDraft(editorForRemoteDraft(currentSettings, entry));
+    window.location.href = "/editor/";
+  }
+
   async function refresh() {
     loading = true;
     error = "";
     try {
       const settings = loadSettings();
+      currentSettings = settings;
       if (!settings.owner.trim() || !settings.repo.trim() || !settings.token.trim()) {
         error = "还没有配置 GitHub repository 和 token。";
         entries = [];
+        remoteDrafts = [];
         return;
       }
-      const allEntries = await loadContentEntries(settings);
+      const [allEntries, allRemoteDrafts] = await Promise.all([loadContentEntries(settings), listRemoteDrafts(settings)]);
       entries = allEntries.filter((entry) => entry.kind === kind);
+      remoteDrafts = allRemoteDrafts.filter((entry) => entry.kind === kind);
     } catch (caught) {
       error = caught instanceof Error ? caught.message : "无法读取内容列表。";
       entries = [];
+      remoteDrafts = [];
     } finally {
       loading = false;
     }
@@ -100,13 +113,21 @@
         <p>{error}</p>
         <span class="admin-post-card__meta">Settings modal pending</span>
       </article>
-    {:else if entries.length === 0}
+    {:else if entries.length === 0 && remoteDrafts.length === 0}
       <article class="admin-post-card admin-post-card--message post-card card-base">
         <span class="admin-post-card__kicker">Empty</span>
         <strong>{emptyText}</strong>
-        <p>先点第一张卡片新建。</p>
+        <p>先点第一张卡片新建，或用 Save 保存远程草稿。</p>
       </article>
     {:else}
+      {#each remoteDrafts as entry}
+        <button class="admin-post-card admin-post-card--remote-draft post-card card-base surface-hover" type="button" on:click={() => openRemoteDraft(entry)}>
+          <span class="admin-post-card__kicker">Remote Draft / {formatDate(entry.frontmatter.published)}</span>
+          <strong>{entry.frontmatter.title}</strong>
+          <p>{entry.frontmatter.description || entry.body.split("\n").find((line) => line.trim() && !line.startsWith("#")) || "Saved admin draft."}</p>
+          <span class="admin-post-card__meta">Saved · {estimateMinutes(entry.body)} min · {entry.slug}</span>
+        </button>
+      {/each}
       {#each entries as entry}
         <button class="admin-post-card post-card card-base surface-hover" type="button" on:click={() => openEntry(entry)}>
           <span class="admin-post-card__kicker">{formatDate(entry.frontmatter.published)} / {entry.frontmatter.category || title}</span>
@@ -231,6 +252,11 @@
       linear-gradient(135deg, color-mix(in oklch, var(--card-bg) 88%, var(--primary) 12%), var(--card-bg));
   }
   .admin-post-card--new strong { font-size: clamp(1.55rem, 3vw, 2.35rem); }
+  .admin-post-card--remote-draft {
+    background:
+      radial-gradient(circle at 92% 0%, color-mix(in oklch, var(--primary) 10%, transparent), transparent 32%),
+      color-mix(in oklch, var(--card-bg) 96%, var(--primary) 4%);
+  }
   .admin-post-card--message { cursor: default; }
   .admin-post-card--message strong { color: rgb(255 255 255 / 0.84); }
   .admin-post-card--message:hover strong { color: rgb(255 255 255 / 0.84); }

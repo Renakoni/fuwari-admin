@@ -95,6 +95,15 @@ export async function readFile(settings: AdminSettings, path: string): Promise<{
   };
 }
 
+export async function readFileOrNull(settings: AdminSettings, path: string): Promise<{ sha: string; content: string } | null> {
+  try {
+    return await readFile(settings, path);
+  } catch (caught) {
+    if (caught instanceof Error && caught.message.startsWith("GitHub 404:")) return null;
+    throw caught;
+  }
+}
+
 export async function listMarkdownPostFiles(settings: AdminSettings): Promise<GitHubFile[]> {
   const root = await listDirectory(settings, settings.contentPath);
   const files: GitHubFile[] = [];

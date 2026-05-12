@@ -19,6 +19,10 @@ coverage/
 .playwright-mcp/
 playwright-report/
 test-results/
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
 
 # Claude/local workspace state
 .claude/
