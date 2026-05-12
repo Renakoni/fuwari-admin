@@ -33,6 +33,14 @@ export type EditorState = {
   body: string;
 };
 
+export type ImageUpload = {
+  src: string;
+  name: string;
+  size: number;
+  type: string;
+  data: string;
+};
+
 export type GitHubFile = {
   type: "file";
   name: string;

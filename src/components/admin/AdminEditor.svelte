@@ -11,19 +11,15 @@
   import { saveRemoteDraft as saveRemoteDraftToApi } from "../../lib/drafts";
   import { loadEditorDraft, saveEditorDraft } from "../../lib/storage";
   import { isImagePlaceholder } from "./imageBlock";
-  import type { EditorState } from "../../types";
+  import type { EditorState, ImageUpload } from "../../types";
   import { parsePreviewBlocks } from "./adminPreview";
   import type { PreviewBlock } from "./adminPreview";
   import { blocks, slashItems as allSlashItems, tools } from "./editorConfig";
   import type { EditorBlock, EditorTool, SlashItem } from "./editorConfig";
 
   type ComposerMode = "write" | "preview";
-  type PendingImage = {
-    src: string;
+  type PendingImage = ImageUpload & {
     objectUrl: string;
-    name: string;
-    size: number;
-    type: string;
   };
 
   let title = "Untitled Draft";
@@ -46,6 +42,7 @@
   let milkdownSurface: any;
   let copiedPreviewCode = "";
   let pendingImages = new Map<string, PendingImage>();
+  let pendingCover: PendingImage | null = null;
   let saveState: "idle" | "saving" | "saved" | "blocked" | "error" = "idle";
   let saveMessage = "";
 
@@ -55,6 +52,7 @@
   $: wordCount = body.trim() ? body.trim().split(/\s+/).length : 0;
   $: readingMinutes = Math.max(1, Math.ceil(wordCount / 240));
   $: previewBlocks = parsePreviewBlocks(body);
+  $: coverPreview = pendingCover?.objectUrl || cover;
   $: if (editor) {
     editor.frontmatter = {
       ...editor.frontmatter,
@@ -106,6 +104,7 @@
 
   onDestroy(() => {
     pendingImages.forEach((image) => URL.revokeObjectURL(image.objectUrl));
+    if (pendingCover) URL.revokeObjectURL(pendingCover.objectUrl);
   });
 
   function syncEditorFromFields(): EditorState | null {
@@ -166,21 +165,25 @@
 
   function applyTool(tool: Pick<EditorTool, "action">) {
     if (mode !== "write" || !milkdownSurface) {
-      if (tool.action === "h2") insertSyntax("\n## 小节标题\n\n");
       if (tool.action === "bold") wrapSelection("**", "**");
       if (tool.action === "italic") wrapSelection("*", "*");
+      if (tool.action === "underline") wrapSelection("++", "++");
+      if (tool.action === "strike") wrapSelection("~~", "~~");
       if (tool.action === "link") wrapSelection("[", "](https://)");
       if (tool.action === "code") insertSyntax("\n```ts\n\n```\n");
+      if (tool.action === "math") insertSyntax("\n```fuwari-latex\nE = mc^2\n```\n");
       if (tool.action === "quote") insertSyntax("\n> 引用内容\n");
       if (tool.action === "bullet") insertSyntax("\n- 列表项\n");
       if (tool.action === "ordered") insertSyntax("\n1. 列表项\n");
       return;
     }
-    if (tool.action === "h2") milkdownSurface.setHeading(2);
     if (tool.action === "bold") milkdownSurface.toggleWrap("**", "**");
     if (tool.action === "italic") milkdownSurface.toggleWrap("*", "*");
+    if (tool.action === "underline") milkdownSurface.toggleWrap("++", "++");
+    if (tool.action === "strike") milkdownSurface.toggleWrap("~~", "~~");
     if (tool.action === "link") milkdownSurface.insertLink();
     if (tool.action === "code") milkdownSurface.setCodeBlock();
+    if (tool.action === "math") milkdownSurface.insertMathBlock();
     if (tool.action === "quote") milkdownSurface.insertBlockquote();
     if (tool.action === "bullet") milkdownSurface.insertList(false);
     if (tool.action === "ordered") milkdownSurface.insertList(true);
@@ -219,14 +222,55 @@
     markUnsaved();
   }
 
+  function selectPendingCover(event: CustomEvent<PendingImage>) {
+    if (pendingCover && pendingCover.objectUrl !== event.detail.objectUrl) URL.revokeObjectURL(pendingCover.objectUrl);
+    pendingCover = event.detail;
+    cover = event.detail.src;
+    markUnsaved();
+  }
+
+  function updateCover(value: string) {
+    if (pendingCover && value !== pendingCover.src) {
+      URL.revokeObjectURL(pendingCover.objectUrl);
+      pendingCover = null;
+    }
+    cover = value;
+    markUnsaved();
+  }
+
+  function clearCover() {
+    if (pendingCover) URL.revokeObjectURL(pendingCover.objectUrl);
+    pendingCover = null;
+    cover = "";
+    markUnsaved();
+  }
+
   function unresolvedRelativeImageCount() {
-    return previewBlocks.filter((block) => block.type === "figure" && isImagePlaceholder(block.src || "") && !pendingImages.has(block.src || "")).length;
+    return previewBlocks.filter((block) => {
+      const src = block.type === "figure" ? block.src || "" : "";
+      return block.type === "figure" && isImagePlaceholder(src) && !src.startsWith("./assets/") && !pendingImages.has(src);
+    }).length;
+  }
+
+  function pendingImageUploads(): ImageUpload[] {
+    const uploads = [...pendingImages.values()].map(({ src, name, size, type, data }) => ({ src, name, size, type, data }));
+    if (pendingCover) {
+      const { src, name, size, type, data } = pendingCover;
+      uploads.push({ src, name, size, type, data });
+    }
+    return uploads;
+  }
+
+  function unresolvedCoverNeedsUpload() {
+    const value = cover.trim();
+    if (!value || pendingCover?.src === value || value.startsWith("./assets/") || value.startsWith("/") || /^https?:\/\//i.test(value)) return false;
+    return value.startsWith("./");
   }
 
   function blockIfImagesNeedUpload(action: string): boolean {
-    if (pendingImages.size > 0) {
+    if (unresolvedCoverNeedsUpload()) {
       saveState = "blocked";
-      saveMessage = `${pendingImages.size} local image${pendingImages.size === 1 ? "" : "s"} must be uploaded before ${action}.`;
+      saveMessage = `Cover image needs upload or a remote URL before ${action}.`;
       return true;
     }
     const unresolvedImages = unresolvedRelativeImageCount();
@@ -247,8 +291,17 @@
     try {
       snapshot.frontmatter = { ...snapshot.frontmatter, draft: true };
       draft = true;
-      const saved = await saveRemoteDraftToApi(snapshot);
+      const saved = await saveRemoteDraftToApi(snapshot, pendingImageUploads());
       snapshot.sha = saved.sha;
+      if (saved.body) snapshot.body = body = saved.body;
+      if (saved.frontmatter) {
+        snapshot.frontmatter = saved.frontmatter;
+        cover = saved.frontmatter.image;
+      }
+      pendingImages.forEach((image) => URL.revokeObjectURL(image.objectUrl));
+      pendingImages = new Map();
+      if (pendingCover) URL.revokeObjectURL(pendingCover.objectUrl);
+      pendingCover = null;
       saveEditorDraft(snapshot);
       lastSavedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       saveState = "saved";
@@ -267,11 +320,20 @@
     saveMessage = "Publishing to GitHub...";
     try {
       snapshot.frontmatter = { ...snapshot.frontmatter, draft: false };
-      const published = await publishContent(snapshot);
+      const published = await publishContent(snapshot, pendingImageUploads());
       snapshot.mode = "edit";
       snapshot.path = published.path;
       snapshot.sha = published.sha;
+      if (published.body) snapshot.body = body = published.body;
+      if (published.frontmatter) {
+        snapshot.frontmatter = published.frontmatter;
+        cover = published.frontmatter.image;
+      }
       snapshot.frontmatter.draft = false;
+      pendingImages.forEach((image) => URL.revokeObjectURL(image.objectUrl));
+      pendingImages = new Map();
+      if (pendingCover) URL.revokeObjectURL(pendingCover.objectUrl);
+      pendingCover = null;
       editor = snapshot;
       draft = false;
       saveEditorDraft(snapshot);
@@ -303,7 +365,7 @@
         </div>
         <input class="composer-title" bind:value={title} aria-label="Title" placeholder="Untitled Draft" />
       </div>
-      <EditorMetadataRail {description} {tagList} {category} {published} {cover} on:editMetadata={() => (metadataOpen = true)} />
+      <EditorMetadataRail {description} {tagList} {category} {published} {cover} {coverPreview} on:editMetadata={() => (metadataOpen = true)} />
     </section>
 
     <EditorToolbar {tools} {blocks} on:tool={(event) => applyTool(event.detail)} on:block={(event) => insertBlock(event.detail)} />
@@ -334,13 +396,17 @@
       {published}
       {tags}
       {cover}
+      {coverPreview}
+      pendingCover={Boolean(pendingCover)}
       {draft}
       on:close={() => (metadataOpen = false)}
       on:descriptionChange={(event) => (description = event.detail)}
       on:categoryChange={(event) => (category = event.detail)}
       on:publishedChange={(event) => (published = event.detail)}
       on:tagsChange={(event) => (tags = event.detail)}
-      on:coverChange={(event) => (cover = event.detail)}
+      on:coverChange={(event) => updateCover(event.detail)}
+      on:coverImageSelected={selectPendingCover}
+      on:clearCover={clearCover}
       on:toggleDraft={() => (draft = !draft)}
     />
   {/if}

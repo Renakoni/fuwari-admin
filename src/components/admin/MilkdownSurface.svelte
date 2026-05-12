@@ -20,6 +20,7 @@
     name: string;
     size: number;
     type: string;
+    data: string;
   };
 
   const dispatch = createEventDispatcher<{ change: string; slash: { x: number; y: number }; selectImage: PendingImage }>();
@@ -113,6 +114,7 @@
 
   function handleKeydown(event: KeyboardEvent) {
     const isMod = event.ctrlKey || event.metaKey;
+    if (isMod && ["z", "y"].includes(event.key.toLowerCase())) return;
     if (isMod && event.shiftKey && event.key.toLowerCase() === "k") {
       event.preventDefault();
       setCodeBlock();
@@ -211,7 +213,8 @@
       codeBlock.toggleAttribute("data-fuwari-video", language === "video");
       codeBlock.toggleAttribute("data-fuwari-image", language === "image");
       codeBlock.toggleAttribute("data-fuwari-callout", isCalloutBlock);
-      codeBlock.setAttribute("data-fuwari-language", language || "text");
+      codeBlock.toggleAttribute("data-fuwari-latex", language === "fuwari-latex");
+      codeBlock.setAttribute("data-fuwari-language", language === "fuwari-latex" ? "latex" : language || "text");
       if (language === "image") {
         codeBlock.querySelector(".fuwari-copy-button")?.remove();
       } else {
@@ -312,7 +315,7 @@
     }
   }
 
-  function selectImageFile(codeBlock: Element, card: HTMLDivElement) {
+  async function selectImageFile(codeBlock: Element, card: HTMLDivElement) {
     const input = card.querySelector(".fuwari-image-card-file") as HTMLInputElement | null;
     const file = input?.files?.[0];
     if (!input || !file) return;
@@ -322,12 +325,23 @@
       input.value = "";
       return;
     }
+    const data = await fileToBase64(file);
     const src = safeImageSrc(file.name);
     const objectUrl = URL.createObjectURL(file);
     const note = (card.querySelector(".fuwari-image-card-note-input") as HTMLInputElement | null)?.value ?? defaultImageBlock.caption;
     updateImageBlockText(codeBlock, serializeImageBlock({ src, alt: note, caption: note }));
-    dispatch("selectImage", { src, objectUrl, name: file.name, size: file.size, type: file.type });
+    dispatch("selectImage", { src, objectUrl, name: file.name, size: file.size, type: file.type, data });
     input.value = "";
+  }
+
+  async function fileToBase64(file: File) {
+    const buffer = await file.arrayBuffer();
+    let binary = "";
+    const bytes = new Uint8Array(buffer);
+    for (let index = 0; index < bytes.length; index += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+    }
+    return btoa(binary);
   }
 
   function getCodeBlockNodeText(codeBlock: Element) {
@@ -501,6 +515,15 @@
     applyMark(markNames);
   }
 
+  function syncMarkdownSoon() {
+    window.queueMicrotask(() => {
+      if (!crepe) return;
+      const markdown = crepe.getMarkdown();
+      internalValue = markdown;
+      dispatch("change", markdown);
+    });
+  }
+
   export function insertMarkdown(markdown: string) {
     if (!crepe) return;
     crepe.editor.action((ctx) => {
@@ -509,6 +532,7 @@
       view.dispatch(view.state.tr.insertText(markdown, from, to));
       view.focus();
     });
+    syncMarkdownSoon();
   }
 
   function insertAfterCurrentBlock(view: any, nodes: any[]) {
@@ -561,6 +585,7 @@
       if (!list || !listItem || !paragraph) return;
       insertAfterCurrentBlock(view, [list.create(null, [listItem.create(null, [paragraph.create(null, schema.text("列表项"))])])]);
     });
+    syncMarkdownSoon();
   }
 
   export function wrapSelection(before: string, after: string) {
@@ -578,6 +603,8 @@
   export function toggleWrap(before: string, after: string) {
     if (before === "**" && after === "**" && applyMark(["strong", "bold"])) return;
     if (before === "*" && after === "*" && applyMark(["emphasis", "em", "italic"])) return;
+    if (before === "++" && after === "++" && applyMark(["underline", "u", "ins"])) return;
+    if (before === "~~" && after === "~~" && applyMark(["strike_through", "strikethrough", "strike", "del"])) return;
     wrapSelection(before, after);
   }
 
@@ -618,6 +645,16 @@
       const cursor = Math.min(view.state.selection.from, tr.doc.content.size);
       view.dispatch(tr.setSelection(TextSelection.near(tr.doc.resolve(cursor))).scrollIntoView());
       view.focus();
+    });
+  }
+
+  export function insertMathBlock() {
+    if (!crepe) return;
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const codeBlock = view.state.schema.nodes.code_block;
+      if (!codeBlock) return;
+      insertAfterCurrentBlock(view, [codeBlock.create({ language: "fuwari-latex" }, view.state.schema.text("E = mc^2"))]);
     });
   }
 
@@ -731,6 +768,26 @@
     margin: 0.58rem 0;
     min-height: 1.82em;
   }
+  .milkdown-root :global(.ProseMirror ul),
+  .milkdown-root :global(.ProseMirror ol) {
+    margin: 0.72rem 0;
+    padding-left: 1.45rem;
+    color: rgb(255 255 255 / 0.76);
+  }
+  .milkdown-root :global(.ProseMirror ul) {
+    list-style: disc outside;
+  }
+  .milkdown-root :global(.ProseMirror ol) {
+    list-style: decimal outside;
+  }
+  .milkdown-root :global(.ProseMirror li) {
+    margin: 0.28rem 0;
+    padding-left: 0.2rem;
+  }
+  .milkdown-root :global(.ProseMirror li::marker) {
+    color: color-mix(in oklch, var(--primary) 74%, rgb(255 255 255 / 0.5));
+    font-weight: 900;
+  }
   .milkdown-root :global(.ProseMirror code) {
     border-radius: 0.36rem;
     background: rgb(255 255 255 / 0.075);
@@ -771,7 +828,8 @@
   }
   .milkdown-root :global(.milkdown-code-block[data-fuwari-video]),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-image]),
-  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout]) {
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout]),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-latex]) {
     margin-bottom: 1rem;
   }
   .milkdown-root :global(.milkdown-code-block[data-fuwari-image]) {
@@ -784,12 +842,15 @@
   .milkdown-root :global(.milkdown-code-block[data-fuwari-image] .fuwari-language-input),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-image] .fuwari-language-suggestions),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-callout] .fuwari-language-input),
-  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout] .fuwari-language-suggestions) {
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout] .fuwari-language-suggestions),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-latex] .fuwari-language-input),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-latex] .fuwari-language-suggestions) {
     display: none !important;
   }
   .milkdown-root :global(.milkdown-code-block[data-fuwari-video]::before),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-image]::before),
-  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout]::before) {
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout]::before),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-latex]::before) {
     content: attr(data-fuwari-language);
     position: absolute;
     top: 0.62rem;
@@ -805,7 +866,8 @@
     font-weight: 850;
   }
   .milkdown-root :global(.milkdown-code-block[data-fuwari-video] .cm-editor),
-  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout] .cm-editor) {
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout] .cm-editor),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-latex] .cm-editor) {
     padding-top: 2.2rem;
   }
   .milkdown-root :global(.milkdown-code-block[data-fuwari-callout]) {

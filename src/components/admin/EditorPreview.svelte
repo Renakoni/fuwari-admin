@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import { highlightedCode } from "./adminPreview";
+  import katex from "katex";
+  import { highlightedCode, renderInlineMarkdown } from "./adminPreview";
   import type { PreviewBlock } from "./adminPreview";
   import { isImagePlaceholder } from "./imageBlock";
 
@@ -16,6 +17,14 @@
 
   function previewCodeKey(block: Extract<PreviewBlock, { type: "code" }>, index: number) {
     return `${index}:${block.lang}:${block.code}`;
+  }
+
+  function renderedMath(block: Extract<PreviewBlock, { type: "math" }>) {
+    try {
+      return katex.renderToString(block.formula, { displayMode: true, throwOnError: false, strict: false });
+    } catch {
+      return `<code>${block.formula}</code>`;
+    }
   }
 
   let missingPreviewImages = new Set<string>();
@@ -72,6 +81,27 @@
   {#each previewBlocks as block, index}
     {#if block.type === "heading"}
       <h2>{block.text}</h2>
+    {:else if block.type === "paragraph"}
+      <p>{@html renderInlineMarkdown(block.text)}</p>
+    {:else if block.type === "spacer"}
+      <div class="preview-spacer" aria-hidden="true"></div>
+    {:else if block.type === "quote"}
+      <blockquote class="preview-quote"><p>{@html renderInlineMarkdown(block.text)}</p></blockquote>
+    {:else if block.type === "list"}
+      {#if block.ordered}
+        <ol class="preview-list">
+          {#each block.items as item}<li>{@html renderInlineMarkdown(item)}</li>{/each}
+        </ol>
+      {:else}
+        <ul class="preview-list">
+          {#each block.items as item}<li>{@html renderInlineMarkdown(item)}</li>{/each}
+        </ul>
+      {/if}
+    {:else if block.type === "math"}
+      <figure class="preview-math-block">
+        <figcaption>LaTeX</figcaption>
+        <div class="preview-math-formula">{@html renderedMath(block)}</div>
+      </figure>
     {:else if block.type === "code"}
       <figure class="preview-code-block">
         <figcaption>{block.lang}</figcaption>
@@ -150,12 +180,57 @@
     color: rgb(255 255 255 / 0.6);
     line-height: 1.75;
   }
+  .preview-spacer {
+    height: 1.35rem;
+  }
+  .composer-preview p :global(strong) {
+    color: rgb(255 255 255 / 0.9);
+    font-weight: 900;
+  }
+  .composer-preview p :global(u) {
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.18em;
+  }
+  .composer-preview p :global(del),
+  .preview-list :global(del) {
+    color: rgb(255 255 255 / 0.48);
+    text-decoration-color: color-mix(in oklch, var(--primary) 55%, rgb(255 255 255 / 0.35));
+  }
+  .preview-quote {
+    position: relative;
+    margin: 1rem 0;
+    max-width: 44rem;
+    border-left: 3px solid color-mix(in oklch, var(--primary) 55%, transparent);
+    padding: 0.15rem 0 0.15rem 1rem;
+    color: rgb(255 255 255 / 0.66);
+  }
+  .preview-quote p {
+    margin: 0;
+  }
+  .preview-list {
+    max-width: 44rem;
+    margin: 0.72rem 0;
+    padding-left: 1.35rem;
+    color: rgb(255 255 255 / 0.62);
+    line-height: 1.75;
+  }
+  ul.preview-list {
+    list-style: disc outside;
+  }
+  ol.preview-list {
+    list-style: decimal outside;
+  }
+  .preview-list li::marker {
+    color: color-mix(in oklch, var(--primary) 70%, rgb(255 255 255 / 0.4));
+    font-weight: 800;
+  }
   .composer-preview h2 {
     margin-top: 1.7rem;
     color: rgb(255 255 255 / 0.84);
     font-size: 1.45rem;
     letter-spacing: -0.04em;
   }
+  .preview-math-block,
   .preview-code-block {
     position: relative;
     margin: 1.05rem 0;
@@ -190,6 +265,7 @@
     height: 0.94rem;
     fill: currentColor;
   }
+  .preview-math-block figcaption,
   .preview-code-block figcaption {
     display: inline-flex;
     margin: 0.72rem 0 0 0.82rem;
@@ -212,6 +288,18 @@
     font-size: 0.86rem;
     line-height: 1.72;
     white-space: pre;
+  }
+  .preview-math-formula {
+    margin: 0;
+    padding: 1rem 1.1rem 1.2rem;
+    overflow-x: auto;
+    color: rgb(255 255 255 / 0.84);
+  }
+  .preview-math-formula :global(.katex-display) {
+    margin: 0;
+  }
+  .preview-math-formula :global(.katex) {
+    font-size: 1.12rem;
   }
   :global(.code-token--keyword) {
     color: #ff7b72;

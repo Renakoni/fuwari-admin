@@ -1,4 +1,5 @@
 import type { ServerConfig } from "./config.js";
+import { copyDraftAssets, parseImages, rewriteFrontmatterImage, rewriteImageSources, uploadImages } from "./assets.js";
 import { listMarkdownPostFiles, readFile, readFileOrNull, writeFile } from "./github.js";
 import { parsePost, stringifyPost } from "./frontmatter.js";
 import type { ContentEntry, ContentKind, EditorState } from "./types.js";
@@ -69,10 +70,9 @@ export async function loadContentEntries(config: ServerConfig): Promise<ContentE
   return sortEntries(entries);
 }
 
-export async function publishEditor(config: ServerConfig, body: unknown): Promise<{ path: string; sha: string; commitUrl: string }> {
-  const editor = (body && typeof body === "object" && "editor" in body)
-    ? (body as { editor?: unknown }).editor
-    : body;
+export async function publishEditor(config: ServerConfig, body: unknown): Promise<{ path: string; sha: string; commitUrl: string; body: string; frontmatter: EditorState["frontmatter"]; assets: string[] }> {
+  const payload = body && typeof body === "object" && "editor" in body ? body as { editor?: unknown; images?: unknown } : { editor: body, images: [] };
+  const editor = payload.editor;
 
   if (!isEditorState(editor)) throw new Error("Invalid publish payload.");
 
@@ -82,13 +82,21 @@ export async function publishEditor(config: ServerConfig, body: unknown): Promis
     throw new Error("Invalid publish path.");
   }
 
+  const images = parseImages(payload.images);
+  const assetRoot = path.replace(/\/index\.md$/, "/assets");
   const frontmatter = { ...editor.frontmatter, draft: false };
+  const message = publishCommitMessage({ ...editor, frontmatter });
+  await uploadImages(config, assetRoot, images, message);
+  const rewritten = rewriteImageSources(editor.body, images);
+  const rewrittenFrontmatter = rewriteFrontmatterImage(frontmatter, images);
+  const assets = [...rewritten.assets, ...rewrittenFrontmatter.assets];
+  await copyDraftAssets(config, editor, rewritten.body, rewrittenFrontmatter.frontmatter.image, assetRoot, assets, message);
   const existing = await readFileOrNull(config, path);
   const result = await writeFile(
     config,
     path,
-    stringifyPost(frontmatter, editor.body),
-    publishCommitMessage({ ...editor, frontmatter }),
+    stringifyPost(rewrittenFrontmatter.frontmatter, rewritten.body),
+    message,
     existing?.sha,
   );
 
@@ -96,5 +104,8 @@ export async function publishEditor(config: ServerConfig, body: unknown): Promis
     path: result.content.path,
     sha: result.content.sha,
     commitUrl: result.commit.html_url,
+    body: rewritten.body,
+    frontmatter: rewrittenFrontmatter.frontmatter,
+    assets,
   };
 }

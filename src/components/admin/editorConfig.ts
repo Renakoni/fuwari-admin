@@ -1,6 +1,6 @@
 import { imageBlockMarkdown } from "./imageBlock";
 
-export type ToolAction = "h2" | "bold" | "italic" | "link" | "code" | "quote" | "bullet" | "ordered";
+export type ToolAction = "bold" | "italic" | "underline" | "strike" | "link" | "code" | "math" | "quote" | "bullet" | "ordered";
 export type FuwariBlockKind = "note" | "warning" | "figure" | "video" | "evidence";
 
 export type EditorTool = { label: string; icon: string; hint: string; action: ToolAction };
@@ -10,11 +10,13 @@ export type SlashItem = { label: string; hint: string; syntax: string };
 export const tools: EditorTool[] = [
   { label: "加粗", icon: "B", hint: "Ctrl+B", action: "bold" },
   { label: "斜体", icon: "I", hint: "Ctrl+I", action: "italic" },
-  { label: "标题", icon: "H2", hint: "Ctrl+2", action: "h2" },
+  { label: "下划", icon: "U", hint: "Underline", action: "underline" },
+  { label: "删除", icon: "S", hint: "Strikethrough", action: "strike" },
   { label: "引用", icon: "❝", hint: "Blockquote", action: "quote" },
   { label: "无序", icon: "•", hint: "List", action: "bullet" },
   { label: "有序", icon: "1.", hint: "List", action: "ordered" },
   { label: "代码块", icon: "</>", hint: "Ctrl+Shift+K", action: "code" },
+  { label: "公式", icon: "∑", hint: "LaTeX", action: "math" },
   { label: "超链接", icon: "↗", hint: "Ctrl+K", action: "link" },
 ];
 

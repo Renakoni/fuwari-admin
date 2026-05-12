@@ -1,5 +1,6 @@
 import type { ServerConfig } from "./config.js";
 import { parsePost, stringifyPost } from "./frontmatter.js";
+import { parseImages, rewriteFrontmatterImage, rewriteImageSources, uploadImages } from "./assets.js";
 import { listDirectory, readFile, readFileOrNull, writeFile } from "./github.js";
 import { sortEntries } from "./content.js";
 import type { ContentEntry, ContentKind, EditorState } from "./types.js";
@@ -76,22 +77,28 @@ export async function listRemoteDrafts(config: ServerConfig): Promise<ContentEnt
   return sortEntries(drafts);
 }
 
-export async function saveRemoteDraft(config: ServerConfig, body: unknown): Promise<{ path: string; sha: string; commitUrl: string }> {
-  const editor = (body && typeof body === "object" && "editor" in body)
-    ? (body as { editor?: unknown }).editor
-    : body;
+export async function saveRemoteDraft(config: ServerConfig, body: unknown): Promise<{ path: string; sha: string; commitUrl: string; body: string; frontmatter: EditorState["frontmatter"]; assets: string[] }> {
+  const payload = body && typeof body === "object" && "editor" in body ? body as { editor?: unknown; images?: unknown } : { editor: body, images: [] };
+  const editor = payload.editor;
 
   if (!isEditorState(editor)) throw new Error("Invalid draft payload.");
   const path = draftPathForEditor(editor);
   if (!path.startsWith(`${DRAFT_ROOT}/`) || !path.endsWith("/index.md")) throw new Error("Invalid draft path.");
 
+  const images = parseImages(payload.images);
+  const assetRoot = path.replace(/\/index\.md$/, "/assets");
   const frontmatter = { ...editor.frontmatter, draft: true };
+  const message = remoteDraftCommitMessage({ ...editor, frontmatter });
+  await uploadImages(config, assetRoot, images, message);
+  const rewritten = rewriteImageSources(editor.body, images);
+  const rewrittenFrontmatter = rewriteFrontmatterImage(frontmatter, images);
+  const assets = [...rewritten.assets, ...rewrittenFrontmatter.assets];
   const existing = await readFileOrNull(config, path);
   const result = await writeFile(
     config,
     path,
-    stringifyPost(frontmatter, editor.body),
-    remoteDraftCommitMessage({ ...editor, frontmatter }),
+    stringifyPost(rewrittenFrontmatter.frontmatter, rewritten.body),
+    message,
     existing?.sha,
   );
 
@@ -99,5 +106,8 @@ export async function saveRemoteDraft(config: ServerConfig, body: unknown): Prom
     path: result.content.path,
     sha: result.content.sha,
     commitUrl: result.commit.html_url,
+    body: rewritten.body,
+    frontmatter: rewrittenFrontmatter.frontmatter,
+    assets,
   };
 }

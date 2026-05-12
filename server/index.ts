@@ -3,7 +3,7 @@ import { loadConfig } from "./config.js";
 import { loadContentEntries, publishEditor } from "./content.js";
 import { listRemoteDrafts, saveRemoteDraft } from "./drafts.js";
 
-const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_BODY_BYTES = 25 * 1024 * 1024;
 const config = loadConfig();
 
 type RouteHandler = (request: IncomingMessage, response: ServerResponse) => Promise<unknown> | unknown;

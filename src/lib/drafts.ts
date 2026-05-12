@@ -1,4 +1,4 @@
-import type { ContentEntry, ContentKind, EditorState } from "../types";
+import type { ContentEntry, ContentKind, EditorSaveResult, EditorState, ImageUpload } from "../types";
 import { editorForNewPost } from "./content";
 import { listRemoteDrafts as listRemoteDraftsFromApi, saveRemoteDraft as saveRemoteDraftToApi } from "./adminApi";
 
@@ -41,8 +41,8 @@ export async function listRemoteDrafts(): Promise<ContentEntry[]> {
   return listRemoteDraftsFromApi();
 }
 
-export function saveRemoteDraft(editor: EditorState): Promise<{ path: string; sha: string; commitUrl: string }> {
-  return saveRemoteDraftToApi(editor);
+export function saveRemoteDraft(editor: EditorState, images: ImageUpload[] = []): Promise<EditorSaveResult> {
+  return saveRemoteDraftToApi(editor, images);
 }
 
 export function editorForRemoteDraft(entry: ContentEntry): EditorState {

@@ -1,4 +1,4 @@
-import type { ContentEntry, EditorState } from "../types";
+import type { ContentEntry, EditorSaveResult, EditorState, ImageUpload } from "../types";
 
 const API_BASE = import.meta.env.DEV ? "http://127.0.0.1:8787" : "";
 
@@ -33,16 +33,16 @@ export function listRemoteDrafts(): Promise<ContentEntry[]> {
   return apiFetch<ContentEntry[]>("/api/drafts");
 }
 
-export function saveRemoteDraft(editor: EditorState): Promise<{ path: string; sha: string; commitUrl: string }> {
-  return apiFetch<{ path: string; sha: string; commitUrl: string }>("/api/drafts", {
+export function saveRemoteDraft(editor: EditorState, images: ImageUpload[] = []): Promise<EditorSaveResult> {
+  return apiFetch<EditorSaveResult>("/api/drafts", {
     method: "PUT",
-    body: JSON.stringify({ editor }),
+    body: JSON.stringify({ editor, images }),
   });
 }
 
-export function publishContent(editor: EditorState): Promise<{ path: string; sha: string; commitUrl: string }> {
-  return apiFetch<{ path: string; sha: string; commitUrl: string }>("/api/content", {
+export function publishContent(editor: EditorState, images: ImageUpload[] = []): Promise<EditorSaveResult> {
+  return apiFetch<EditorSaveResult>("/api/content", {
     method: "PUT",
-    body: JSON.stringify({ editor }),
+    body: JSON.stringify({ editor, images }),
   });
 }

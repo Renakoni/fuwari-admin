@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
 
-  type ToolAction = "h2" | "bold" | "italic" | "link" | "code" | "quote" | "bullet" | "ordered";
+  type ToolAction = "bold" | "italic" | "underline" | "strike" | "link" | "code" | "math" | "quote" | "bullet" | "ordered";
   type FuwariBlockKind = "note" | "warning" | "figure" | "video" | "evidence";
 
   export let tools: Array<{ label: string; icon: string; hint: string; action: ToolAction }> = [];
@@ -79,11 +79,18 @@
     line-height: 1;
     white-space: nowrap;
   }
-  .composer-toolbar button:nth-child(4),
-  .composer-toolbar button:nth-child(7),
-  .composer-toolbar button:nth-child(9) {
+  .composer-toolbar button:nth-child(5),
+  .composer-toolbar button:nth-child(8),
+  .composer-toolbar button:nth-child(10) {
     margin-left: 0.44rem;
     box-shadow: -0.5rem 0 0 -0.46rem rgb(255 255 255 / 0.11);
+  }
+  .composer-toolbar button[title^="下划"] strong {
+    text-decoration: underline;
+    text-underline-offset: 0.16em;
+  }
+  .composer-toolbar button[title^="删除"] strong {
+    text-decoration: line-through;
   }
   .composer-toolbar .toolbar-block {
     min-width: 2.82rem;

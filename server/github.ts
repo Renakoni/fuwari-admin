@@ -60,6 +60,15 @@ export async function listDirectory(config: ServerConfig, path: string): Promise
 }
 
 export async function readFile(config: ServerConfig, path: string): Promise<{ sha: string; content: string }> {
+  const file = await readBase64File(config, path);
+
+  return {
+    sha: file.sha,
+    content: decodeBase64(file.content),
+  };
+}
+
+export async function readBase64File(config: ServerConfig, path: string): Promise<{ sha: string; content: string }> {
   const encodedPath = encodePath(path);
   const file = await githubFetch<GitHubFileResponse>(
     config,
@@ -68,7 +77,7 @@ export async function readFile(config: ServerConfig, path: string): Promise<{ sh
 
   return {
     sha: file.sha,
-    content: decodeBase64(file.content),
+    content: file.content.replace(/\n/g, ""),
   };
 }
 
@@ -109,6 +118,16 @@ export async function writeFile(
   message: string,
   sha?: string,
 ): Promise<{ content: { path: string; sha: string }; commit: { html_url: string } }> {
+  return writeBase64File(config, path, encodeBase64(content), message, sha);
+}
+
+export async function writeBase64File(
+  config: ServerConfig,
+  path: string,
+  content: string,
+  message: string,
+  sha?: string,
+): Promise<{ content: { path: string; sha: string }; commit: { html_url: string } }> {
   const encodedPath = encodePath(path);
   return githubFetch<{ content: { path: string; sha: string }; commit: { html_url: string } }>(
     config,
@@ -118,7 +137,7 @@ export async function writeFile(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message,
-        content: encodeBase64(content),
+        content,
         branch: config.githubBranch,
         sha,
       }),

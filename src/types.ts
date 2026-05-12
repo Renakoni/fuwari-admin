@@ -46,6 +46,23 @@ export type EditorState = {
   body: string;
 };
 
+export type ImageUpload = {
+  src: string;
+  name: string;
+  size: number;
+  type: string;
+  data: string;
+};
+
+export type EditorSaveResult = {
+  path: string;
+  sha: string;
+  commitUrl: string;
+  body?: string;
+  frontmatter?: PostFrontmatter;
+  assets?: string[];
+};
+
 export type ContentTab = "all" | "blog" | "note" | "draft";
 
 export type AIApplyMode = "append" | "replace" | "section";

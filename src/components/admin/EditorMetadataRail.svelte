@@ -6,6 +6,11 @@
   export let category = "";
   export let published = "";
   export let cover = "";
+  export let coverPreview = "";
+
+  let coverFailed = false;
+
+  $: if (coverPreview || cover) coverFailed = false;
 
   const dispatch = createEventDispatcher<{ editMetadata: void }>();
 </script>
@@ -15,6 +20,11 @@
     <strong>Metadata</strong>
     <button type="button" aria-label="Edit metadata" on:click={() => dispatch("editMetadata")}>⚙</button>
   </div>
+  {#if cover && !coverFailed}
+    <div class="metadata-cover">
+      <img src={coverPreview || cover} alt="Cover preview" on:error={() => (coverFailed = true)} />
+    </div>
+  {/if}
   <p>{description || "给这篇文章写一句会出现在首页卡片和标题下方的摘要。"}</p>
   {#if tagList.length}
     <div class="metadata-tags">
@@ -53,6 +63,30 @@
     height: 1.8rem;
     color: rgb(255 255 255 / 0.42);
     background: rgb(255 255 255 / 0.035);
+    transition: transform 140ms ease, background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+  }
+  .metadata-rail__head button:hover {
+    color: var(--primary);
+    background: color-mix(in oklch, var(--primary) 13%, transparent);
+    transform: rotate(14deg) scale(1.04);
+    box-shadow: 0 10px 24px rgb(0 0 0 / 0.18);
+  }
+  .metadata-rail__head button:active {
+    transform: rotate(8deg) scale(0.96);
+  }
+  .metadata-cover {
+    aspect-ratio: 16 / 9;
+    margin-bottom: 0.72rem;
+    border: 1px solid rgb(255 255 255 / 0.075);
+    border-radius: 0.82rem;
+    background: rgb(0 0 0 / 0.16);
+    overflow: hidden;
+  }
+  .metadata-cover img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
   .metadata-rail p {
     margin: 0;

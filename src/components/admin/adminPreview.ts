@@ -5,7 +5,11 @@ export type PreviewCalloutKind = "note" | "warning" | "proof";
 export type PreviewBlock =
   | { type: "heading"; text: string }
   | { type: "paragraph"; text: string }
+  | { type: "spacer" }
   | { type: "code"; lang: string; code: string }
+  | { type: "math"; formula: string }
+  | { type: "quote"; text: string }
+  | { type: "list"; ordered: boolean; items: string[] }
   | { type: "callout"; kind: PreviewCalloutKind; label: string; body: string }
   | { type: "figure"; label: string; body: string; src?: string }
   | { type: "video"; label: string; body: string; href?: string; embedSrc?: string; title?: string; note?: string };
@@ -66,6 +70,21 @@ export function highlightedCode(block: Extract<PreviewBlock, { type: "code" }>):
   return highlightCode(block.code || "// code", block.lang);
 }
 
+export function renderInlineMarkdown(value: string): string {
+  let html = escapeHtml(value);
+  html = html.replace(/\*\*\+\+([\s\S]+?)\+\+\*\*/g, "<strong><u>$1</u></strong>");
+  html = html.replace(/\+\+\*\*([\s\S]+?)\*\*\+\+/g, "<u><strong>$1</strong></u>");
+  html = html.replace(/~~\+\+([\s\S]+?)\+\+~~/g, "<del><u>$1</u></del>");
+  html = html.replace(/\+\+~~([\s\S]+?)~~\+\+/g, "<u><del>$1</del></u>");
+  html = html.replace(/\*\*~~([\s\S]+?)~~\*\*/g, "<strong><del>$1</del></strong>");
+  html = html.replace(/~~\*\*([\s\S]+?)\*\*~~/g, "<del><strong>$1</strong></del>");
+  html = html.replace(/\+\+([\s\S]+?)\+\+/g, "<u>$1</u>");
+  html = html.replace(/~~([\s\S]+?)~~/g, "<del>$1</del>");
+  html = html.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  return html;
+}
+
 function getDirectiveLabel(line: string, fallback: string): string {
   const title = line.match(/title="([^"]+)"/)?.[1];
   const caption = line.match(/caption="([^"]+)"/)?.[1];
@@ -112,7 +131,10 @@ export function parsePreviewBlocks(markdown: string): PreviewBlock[] {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const trimmed = line.trim();
-    if (!trimmed) continue;
+    if (!trimmed || /^<br\s*\/?>$/i.test(trimmed)) {
+      if (blocks.length > 0) blocks.push({ type: "spacer" });
+      continue;
+    }
     if (trimmed.startsWith("```")) {
       const lang = trimmed.slice(3).trim() || "text";
       const code: string[] = [];
@@ -148,6 +170,10 @@ export function parsePreviewBlocks(markdown: string): PreviewBlock[] {
         blocks.push({ type: "callout", kind, label: callout.label, body: callout.body });
         continue;
       }
+      if (lang.toLowerCase() === "fuwari-latex") {
+        blocks.push({ type: "math", formula: codeText.trim() || "E = mc^2" });
+        continue;
+      }
       blocks.push({ type: "code", lang, code: codeText });
       continue;
     }
@@ -166,6 +192,35 @@ export function parsePreviewBlocks(markdown: string): PreviewBlock[] {
       const kind = callout[1].toUpperCase() === "WARNING" ? "warning" : callout[1].toUpperCase() === "IMPORTANT" ? "proof" : "note";
       const label = callout[2] || (kind === "warning" ? "Warning" : kind === "proof" ? "Proof" : "Note");
       blocks.push({ type: "callout", kind, label, body: content.join("\n").trim() });
+      continue;
+    }
+    if (trimmed.startsWith(">")) {
+      const content = [cleanBlockquoteLine(line)];
+      while (lines[index + 1]?.trim().startsWith(">")) {
+        index += 1;
+        content.push(cleanBlockquoteLine(lines[index]));
+      }
+      blocks.push({ type: "quote", text: content.join("\n").trim() });
+      continue;
+    }
+    const unorderedItem = trimmed.match(/^[-*+]\s+(.+)$/);
+    if (unorderedItem) {
+      const items = [unorderedItem[1]];
+      while (lines[index + 1]?.trim().match(/^[-*+]\s+(.+)$/)) {
+        index += 1;
+        items.push(lines[index].trim().replace(/^[-*+]\s+/, ""));
+      }
+      blocks.push({ type: "list", ordered: false, items });
+      continue;
+    }
+    const orderedItem = trimmed.match(/^\d+\.\s+(.+)$/);
+    if (orderedItem) {
+      const items = [orderedItem[1]];
+      while (lines[index + 1]?.trim().match(/^\d+\.\s+(.+)$/)) {
+        index += 1;
+        items.push(lines[index].trim().replace(/^\d+\.\s+/, ""));
+      }
+      blocks.push({ type: "list", ordered: true, items });
       continue;
     }
     if (trimmed.startsWith(":::callout")) {
