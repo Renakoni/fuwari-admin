@@ -1,6 +1,6 @@
 import type { ServerConfig } from "./config.js";
-import { copyDraftAssets, prepareImages, rewriteFrontmatterImage, rewriteImageSources, uploadImages } from "./assets.js";
-import { listMarkdownPostFiles, readFile, readFileOrNull, writeFile } from "./github.js";
+import { draftAssetCommitOperations, imageCommitOperations, prepareImages, rewriteFrontmatterImage, rewriteImageSources } from "./assets.js";
+import { commitFiles, listMarkdownPostFiles, readFile } from "./github.js";
 import { parsePost, stringifyPost } from "./frontmatter.js";
 import type { ContentEntry, ContentKind, EditorState } from "./types.js";
 
@@ -86,23 +86,24 @@ export async function publishEditor(config: ServerConfig, body: unknown): Promis
   const assetRoot = path.replace(/\/index\.md$/, "/assets");
   const frontmatter = { ...editor.frontmatter, draft: false };
   const message = publishCommitMessage({ ...editor, frontmatter });
-  await uploadImages(config, assetRoot, images, message);
   const rewritten = rewriteImageSources(editor.body, images);
   const rewrittenFrontmatter = rewriteFrontmatterImage(frontmatter, images);
   const assets = [...rewritten.assets, ...rewrittenFrontmatter.assets];
-  await copyDraftAssets(config, editor, rewritten.body, rewrittenFrontmatter.frontmatter.image, assetRoot, assets, message);
-  const existing = await readFileOrNull(config, path);
-  const result = await writeFile(
-    config,
-    path,
-    stringifyPost(rewrittenFrontmatter.frontmatter, rewritten.body),
-    message,
-    existing?.sha,
-  );
+  const draftAssets = await draftAssetCommitOperations(config, editor, rewritten.body, rewrittenFrontmatter.frontmatter.image, assetRoot, assets);
+  const operations = [
+    ...imageCommitOperations(assetRoot, images),
+    ...draftAssets,
+    {
+      path,
+      content: stringifyPost(rewrittenFrontmatter.frontmatter, rewritten.body),
+    },
+    ...(editor.remoteDraftPath ? [{ path: editor.remoteDraftPath, delete: true as const }] : []),
+  ];
+  const result = await commitFiles(config, message, operations);
 
   return {
-    path: result.content.path,
-    sha: result.content.sha,
+    path,
+    sha: result.commit.sha,
     commitUrl: result.commit.html_url,
     body: rewritten.body,
     frontmatter: rewrittenFrontmatter.frontmatter,

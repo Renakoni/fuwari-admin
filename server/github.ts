@@ -7,6 +7,36 @@ type GitHubFileResponse = {
   sha: string;
 };
 
+type GitRefResponse = {
+  object: { sha: string };
+};
+
+type GitCommitResponse = {
+  sha: string;
+  tree: { sha: string };
+};
+
+type GitBlobResponse = {
+  sha: string;
+};
+
+type GitTreeResponse = {
+  sha: string;
+};
+
+type GitCreatedCommitResponse = {
+  sha: string;
+  html_url: string;
+};
+
+export type MultiFileCommitOperation =
+  | { path: string; content: string; encoding?: "utf-8" | "base64" }
+  | { path: string; delete: true };
+
+function isDeleteOperation(operation: MultiFileCommitOperation): operation is { path: string; delete: true } {
+  return "delete" in operation && operation.delete === true;
+}
+
 const API_BASE = "https://api.github.com";
 
 function encodePath(path: string): string {
@@ -165,4 +195,91 @@ export async function deleteFile(
       }),
     },
   );
+}
+
+export async function commitFiles(
+  config: ServerConfig,
+  message: string,
+  operations: MultiFileCommitOperation[],
+): Promise<{ commit: { html_url: string; sha: string } }> {
+  if (operations.length === 0) throw new Error("No files to commit.");
+
+  const ref = await githubFetch<GitRefResponse>(
+    config,
+    `/repos/${config.githubOwner}/${config.githubRepo}/git/ref/heads/${encodeURIComponent(config.githubBranch)}`,
+  );
+  const baseCommit = await githubFetch<GitCommitResponse>(
+    config,
+    `/repos/${config.githubOwner}/${config.githubRepo}/git/commits/${encodeURIComponent(ref.object.sha)}`,
+  );
+
+  const tree = await Promise.all(operations.map(async (operation) => {
+    if (isDeleteOperation(operation)) {
+      return {
+        path: operation.path,
+        mode: "100644",
+        type: "blob",
+        sha: null,
+      };
+    }
+
+    const blob = await githubFetch<GitBlobResponse>(
+      config,
+      `/repos/${config.githubOwner}/${config.githubRepo}/git/blobs`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: operation.content,
+          encoding: operation.encoding === "base64" ? "base64" : "utf-8",
+        }),
+      },
+    );
+
+    return {
+      path: operation.path,
+      mode: "100644",
+      type: "blob",
+      sha: blob.sha,
+    };
+  }));
+
+  const nextTree = await githubFetch<GitTreeResponse>(
+    config,
+    `/repos/${config.githubOwner}/${config.githubRepo}/git/trees`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        base_tree: baseCommit.tree.sha,
+        tree,
+      }),
+    },
+  );
+
+  const nextCommit = await githubFetch<GitCreatedCommitResponse>(
+    config,
+    `/repos/${config.githubOwner}/${config.githubRepo}/git/commits`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+        tree: nextTree.sha,
+        parents: [ref.object.sha],
+      }),
+    },
+  );
+
+  await githubFetch(
+    config,
+    `/repos/${config.githubOwner}/${config.githubRepo}/git/refs/heads/${encodeURIComponent(config.githubBranch)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sha: nextCommit.sha, force: false }),
+    },
+  );
+
+  return { commit: { html_url: nextCommit.html_url, sha: nextCommit.sha } };
 }

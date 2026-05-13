@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import type { ServerConfig } from "./config.js";
-import { readBase64File, readFileOrNull, writeBase64File } from "./github.js";
+import { readBase64File, readFileOrNull, writeBase64File, type MultiFileCommitOperation } from "./github.js";
 import type { EditorState, ImageUpload, ImageUploadRole, PostFrontmatter } from "./types.js";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -218,6 +218,14 @@ export async function uploadImages(config: ServerConfig, assetRoot: string, imag
   }
 }
 
+export function imageCommitOperations(assetRoot: string, images: ImagePayload[]): MultiFileCommitOperation[] {
+  return images.map((image) => ({
+    path: `${assetRoot}/${image.filename}`,
+    content: image.data,
+    encoding: "base64",
+  }));
+}
+
 export async function copyDraftAssets(config: ServerConfig, editor: EditorState, body: string, frontmatterImage: string, postAssetRoot: string, pendingAssets: string[], message: string): Promise<void> {
   const pending = new Set(pendingAssets);
   const draftAssetRoot = `.admin/drafts/${draftIdForEditor(editor)}/assets`;
@@ -234,4 +242,24 @@ export async function copyDraftAssets(config: ServerConfig, editor: EditorState,
     if (!source) throw new Error(`Missing draft image asset: ${filename}`);
     await writeBase64File(config, targetPath, source.content, message);
   }
+}
+
+export async function draftAssetCommitOperations(config: ServerConfig, editor: EditorState, body: string, frontmatterImage: string, postAssetRoot: string, pendingAssets: string[]): Promise<MultiFileCommitOperation[]> {
+  const pending = new Set(pendingAssets);
+  const draftAssetRoot = `.admin/drafts/${draftIdForEditor(editor)}/assets`;
+  const operations: MultiFileCommitOperation[] = [];
+  for (const filename of referencedAssetFilenames(body, frontmatterImage)) {
+    if (pending.has(`./assets/${filename}`)) continue;
+    const sourcePath = `${draftAssetRoot}/${filename}`;
+    const targetPath = `${postAssetRoot}/${filename}`;
+    const existing = await readFileOrNull(config, targetPath);
+    if (existing) continue;
+    const source = await readBase64File(config, sourcePath).catch((caught) => {
+      if (caught instanceof Error && caught.message.startsWith("GitHub 404:")) return null;
+      throw caught;
+    });
+    if (!source) throw new Error(`Missing draft image asset: ${filename}`);
+    operations.push({ path: targetPath, content: source.content, encoding: "base64" });
+  }
+  return operations;
 }

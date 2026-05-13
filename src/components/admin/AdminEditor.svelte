@@ -8,7 +8,7 @@
   import EditorTopBar from "./EditorTopBar.svelte";
   import { publishContent } from "../../lib/adminApi";
   import { pathForSlug } from "../../lib/content";
-  import { deleteRemoteDraft, saveRemoteDraft as saveRemoteDraftToApi } from "../../lib/drafts";
+  import { saveRemoteDraft as saveRemoteDraftToApi } from "../../lib/drafts";
   import { loadEditorDraft, saveEditorDraft } from "../../lib/storage";
   import { isImagePlaceholder } from "./imageBlock";
   import type { EditorState, ImageUpload } from "../../types";
@@ -409,16 +409,10 @@
       saveState = "saved";
       saveMessage = "Published to GitHub.";
 
-      if (draftPathToDelete && draftShaToDelete) {
-        try {
-          await deleteRemoteDraft(draftPathToDelete, draftShaToDelete, title || snapshot.slug);
-          delete snapshot.remoteDraftPath;
-          delete snapshot.remoteDraftSha;
-          saveMessage = "Published to GitHub. Remote draft cleaned up.";
-        } catch (caught) {
-          saveState = "blocked";
-          saveMessage = `Published, but remote draft cleanup failed: ${caught instanceof Error ? caught.message : "unknown error"}`;
-        }
+      if (draftPathToDelete || draftShaToDelete) {
+        delete snapshot.remoteDraftPath;
+        delete snapshot.remoteDraftSha;
+        saveMessage = "Published to GitHub. Remote draft cleaned up.";
       }
 
       confirmedSlugRenamePath = "";
