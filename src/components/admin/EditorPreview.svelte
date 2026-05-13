@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import katex from "katex";
-  import { highlightedCode, renderInlineMarkdown } from "./adminPreview";
+  import { highlightCode, highlightedCode, renderInlineMarkdown } from "./adminPreview";
   import type { PreviewBlock } from "./adminPreview";
   import { isImagePlaceholder } from "./imageBlock";
 
@@ -52,6 +52,39 @@
     missingPreviewImages = missingPreviewImages;
   }
 
+  function metricRatio(block: Extract<PreviewBlock, { type: "metric" }>) {
+    return Math.max(0, Math.min(1, block.value / block.max));
+  }
+
+  function metricPercent(block: Extract<PreviewBlock, { type: "metric" }>) {
+    return `${Math.round(metricRatio(block) * 100)}%`;
+  }
+
+  function ratingStars(block: Extract<PreviewBlock, { type: "metric" }>) {
+    const ratio = metricRatio(block);
+    return Array.from({ length: Math.ceil(block.max) }, (_, index) => ({ filled: index < Math.round(ratio * Math.ceil(block.max)) }));
+  }
+
+  function githubRepoName(repo: string) {
+    return repo.split("/")[1] || repo;
+  }
+
+  function githubOwner(repo: string) {
+    return repo.split("/")[0] || "GitHub";
+  }
+
+  function tabInputName(index: number) {
+    return `preview-tabs-${index}`;
+  }
+
+  function tabInputId(index: number, tabIndex: number) {
+    return `preview-tabs-${index}-${tabIndex}`;
+  }
+
+  function renderedTabBody(tab: Extract<PreviewBlock, { type: "tabs" }>["tabs"][number]) {
+    return tab.lang === "text" ? renderInlineMarkdown(tab.body) : highlightCode(tab.body, tab.lang);
+  }
+
   function trackPreviewImage(image: HTMLImageElement, params: { block: Extract<PreviewBlock, { type: "figure" }>; index: number }) {
     let current = params;
     const check = () => {
@@ -80,7 +113,7 @@
   {#if description}<p class="preview-dek">{description}</p>{/if}
   {#each previewBlocks as block, index}
     {#if block.type === "heading"}
-      <h2>{block.text}</h2>
+      <h2 id={`preview-heading-${index}`}>{block.text}</h2>
     {:else if block.type === "paragraph"}
       <p>{@html renderInlineMarkdown(block.text)}</p>
     {:else if block.type === "spacer"}
@@ -130,6 +163,57 @@
         </div>
         {#if block.body}<p>{block.body}</p>{/if}
       </aside>
+    {:else if block.type === "metric"}
+      <section class={`preview-metric preview-metric--${block.kind}`} style={`--metric-progress: ${metricPercent(block)}`}>
+        <div class="preview-metric-topline">
+          <span>{block.kind === "rating" ? "Rating" : "Stat"}</span>
+          <strong>{block.value}<small>/ {block.max}</small></strong>
+        </div>
+        <div class="preview-metric-main">
+          <h3>{block.label}</h3>
+          {#if block.kind === "rating"}
+            <div class="preview-rating-stars" aria-label={`${block.value} out of ${block.max}`}>
+              {#each ratingStars(block) as star}
+                <span class:star-empty={!star.filled}>★</span>
+              {/each}
+            </div>
+          {/if}
+        </div>
+        <div class="preview-metric-track" aria-hidden="true"><span></span></div>
+        {#if block.note}<p>{block.note}</p>{/if}
+      </section>
+    {:else if block.type === "github"}
+      <a class="preview-github-card" href={block.href} target="_blank" rel="noreferrer">
+        <div class="preview-github-mark" aria-hidden="true">
+          <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.6 7.6 0 0 1 8 3.86c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        </div>
+        <div class="preview-github-body">
+          <span>GitHub repository</span>
+          <strong><em>{githubOwner(block.repo)}</em><small>/</small>{githubRepoName(block.repo)}</strong>
+          <p>{block.href}</p>
+        </div>
+        <div class="preview-github-corner" aria-hidden="true">↗</div>
+      </a>
+    {:else if block.type === "tabs"}
+      <section class="preview-tabs">
+        {#each block.tabs as tab, tabIndex}
+          <input id={tabInputId(index, tabIndex)} name={tabInputName(index)} type="radio" checked={tabIndex === 0} />
+        {/each}
+        <div class="preview-tabs-rail" role="tablist" aria-label="Preview tabs">
+          {#each block.tabs as tab, tabIndex}
+            <label for={tabInputId(index, tabIndex)} role="tab">{tab.label}</label>
+          {/each}
+        </div>
+        {#each block.tabs as tab, tabIndex}
+          <div class="preview-tab-panel" role="tabpanel" data-tab-index={tabIndex}>
+            {#if tab.lang === "text"}
+              <p>{@html renderedTabBody(tab)}</p>
+            {:else}
+              <pre><code>{@html renderedTabBody(tab)}</code></pre>
+            {/if}
+          </div>
+        {/each}
+      </section>
     {:else if block.type === "figure"}
       <figure class="preview-figure-block">
         <div class="preview-image-frame" class:preview-image-frame--placeholder={isFigurePlaceholder(block, index)}>
@@ -171,8 +255,9 @@
     color: rgb(255 255 255 / 0.92);
     font-size: clamp(2.2rem, 5.2vw, 4.4rem);
     font-weight: 900;
-    letter-spacing: -0.075em;
+    letter-spacing: -0.018em;
     line-height: 0.92;
+    text-wrap: balance;
   }
   .preview-dek,
   .composer-preview p {
@@ -191,10 +276,47 @@
     text-decoration-thickness: 0.08em;
     text-underline-offset: 0.18em;
   }
+  .composer-preview p :global(a),
+  .preview-list :global(a),
+  .preview-quote :global(a) {
+    color: color-mix(in oklch, var(--primary) 78%, white 8%);
+    font-weight: 800;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in oklch, var(--primary) 42%, transparent);
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.2em;
+  }
+  .composer-preview p :global(a:hover),
+  .preview-list :global(a:hover),
+  .preview-quote :global(a:hover) {
+    color: rgb(255 255 255 / 0.92);
+    text-decoration-color: color-mix(in oklch, var(--primary) 70%, white 10%);
+  }
   .composer-preview p :global(del),
   .preview-list :global(del) {
     color: rgb(255 255 255 / 0.48);
     text-decoration-color: color-mix(in oklch, var(--primary) 55%, rgb(255 255 255 / 0.35));
+  }
+  .composer-preview :global(.preview-spoiler) {
+    display: inline;
+    border-radius: 0.28em;
+    background:
+      linear-gradient(90deg, rgb(0 0 0 / 0.96), rgb(10 12 18 / 0.94)),
+      color-mix(in oklch, var(--primary) 18%, black 82%);
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    color: transparent;
+    cursor: help;
+    padding: 0.02em 0.22em;
+    text-shadow: none;
+    transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+  }
+  .composer-preview :global(.preview-spoiler:hover),
+  .composer-preview :global(.preview-spoiler:focus) {
+    background: color-mix(in oklch, var(--primary) 16%, rgb(255 255 255 / 0.075));
+    color: rgb(255 255 255 / 0.84);
+    outline: none;
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 36%, transparent);
   }
   .preview-quote {
     position: relative;
@@ -228,7 +350,7 @@
     margin-top: 1.7rem;
     color: rgb(255 255 255 / 0.84);
     font-size: 1.45rem;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.01em;
   }
   .preview-math-block,
   .preview-code-block {
@@ -386,6 +508,297 @@
     line-height: 1.7;
     white-space: pre-wrap;
   }
+  .preview-metric {
+    --metric-color: oklch(0.78 0.14 88);
+    position: relative;
+    display: grid;
+    gap: 0.62rem;
+    max-width: 34rem;
+    margin: 1.18rem 0;
+    border: 1px solid rgb(255 255 255 / 0.075);
+    border-radius: 0.92rem;
+    background:
+      radial-gradient(circle at 8% 0%, color-mix(in oklch, var(--metric-color) 14%, transparent), transparent 42%),
+      linear-gradient(135deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0.018));
+    padding: 0.92rem 1.1rem 1rem 1.15rem;
+    overflow: hidden;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 16px 40px rgb(0 0 0 / 0.12);
+  }
+  .preview-metric::before {
+    content: "";
+    position: absolute;
+    top: 0.88rem;
+    bottom: 0.88rem;
+    left: 0;
+    width: 2px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, transparent, var(--metric-color), transparent);
+  }
+  .preview-metric::after {
+    content: "";
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: 30%;
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.018));
+    pointer-events: none;
+  }
+  .preview-metric--stat {
+    --metric-color: oklch(0.74 0.12 230);
+  }
+  .preview-metric-topline,
+  .preview-metric-main {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1.25rem;
+  }
+  .preview-metric-topline {
+    color: var(--metric-color);
+    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  }
+  .preview-metric-topline span {
+    font-size: 0.58rem;
+    font-weight: 900;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .preview-metric-topline strong {
+    color: rgb(255 255 255 / 0.88);
+    font-size: 1.12rem;
+    font-weight: 920;
+    letter-spacing: -0.035em;
+  }
+  .preview-metric-topline small {
+    margin-left: 0.12rem;
+    color: rgb(255 255 255 / 0.32);
+    font-size: 0.64rem;
+    letter-spacing: 0;
+  }
+  .preview-metric h3 {
+    margin: 0;
+    color: rgb(255 255 255 / 0.82);
+    font-size: 1rem;
+    font-weight: 820;
+    letter-spacing: -0.025em;
+  }
+  .preview-rating-stars {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 0.08rem;
+    color: var(--metric-color);
+    font-size: 0.9rem;
+    letter-spacing: 0.02em;
+    opacity: 0.9;
+  }
+  .preview-rating-stars .star-empty {
+    color: rgb(255 255 255 / 0.16);
+  }
+  .preview-metric-track {
+    position: relative;
+    z-index: 1;
+    height: 2px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgb(255 255 255 / 0.11), rgb(255 255 255 / 0.045));
+    overflow: hidden;
+  }
+  .preview-metric-track span {
+    display: block;
+    width: var(--metric-progress);
+    height: 100%;
+    background: linear-gradient(90deg, color-mix(in oklch, var(--metric-color) 55%, white 8%), var(--metric-color));
+    box-shadow: 0 0 14px color-mix(in oklch, var(--metric-color) 45%, transparent);
+  }
+  .preview-metric p {
+    position: relative;
+    z-index: 1;
+    margin: 0;
+    color: rgb(255 255 255 / 0.5);
+    font-size: 0.82rem;
+    font-weight: 620;
+    line-height: 1.6;
+  }
+  .preview-github-card {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.9rem;
+    align-items: center;
+    max-width: 42rem;
+    margin: 1.18rem 0;
+    border: 1px solid rgb(255 255 255 / 0.08);
+    border-radius: 1.05rem;
+    background:
+      radial-gradient(circle at 8% 0%, color-mix(in oklch, var(--primary) 12%, transparent), transparent 40%),
+      linear-gradient(135deg, rgb(255 255 255 / 0.048), rgb(255 255 255 / 0.018));
+    padding: 0.92rem 1rem;
+    color: inherit;
+    text-decoration: none;
+    overflow: hidden;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 18px 46px rgb(0 0 0 / 0.14);
+  }
+  .preview-github-card::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 2px;
+    background: linear-gradient(90deg, color-mix(in oklch, var(--primary) 62%, white 6%), transparent 72%);
+    opacity: 0.72;
+  }
+  .preview-github-mark {
+    display: grid;
+    place-items: center;
+    width: 2.55rem;
+    height: 2.55rem;
+    border: 1px solid rgb(255 255 255 / 0.08);
+    border-radius: 0.78rem;
+    background: rgb(255 255 255 / 0.06);
+    color: rgb(255 255 255 / 0.82);
+  }
+  .preview-github-mark svg {
+    width: 1.22rem;
+    height: 1.22rem;
+    fill: currentColor;
+  }
+  .preview-github-body {
+    min-width: 0;
+  }
+  .preview-github-body span,
+  .preview-github-body p {
+    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  }
+  .preview-github-body span {
+    display: block;
+    margin-bottom: 0.18rem;
+    color: color-mix(in oklch, var(--primary) 50%, rgb(255 255 255 / 0.42));
+    font-size: 0.58rem;
+    font-weight: 900;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  .preview-github-body strong {
+    display: block;
+    overflow: hidden;
+    color: rgb(255 255 255 / 0.86);
+    font-size: 1.08rem;
+    font-weight: 880;
+    letter-spacing: -0.035em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .preview-github-body em {
+    color: rgb(255 255 255 / 0.48);
+    font-style: normal;
+    font-weight: 650;
+  }
+  .preview-github-body small {
+    margin: 0 0.32rem;
+    color: rgb(255 255 255 / 0.28);
+  }
+  .preview-github-body p {
+    margin: 0.28rem 0 0;
+    overflow: hidden;
+    color: rgb(255 255 255 / 0.42);
+    font-size: 0.68rem;
+    font-weight: 650;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .preview-github-corner {
+    color: rgb(255 255 255 / 0.36);
+    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+    font-size: 0.8rem;
+    font-weight: 900;
+  }
+  .preview-github-card:hover {
+    border-color: color-mix(in oklch, var(--primary) 24%, rgb(255 255 255 / 0.1));
+    background:
+      radial-gradient(circle at 8% 0%, color-mix(in oklch, var(--primary) 16%, transparent), transparent 42%),
+      linear-gradient(135deg, rgb(255 255 255 / 0.058), rgb(255 255 255 / 0.024));
+  }
+  .preview-tabs {
+    max-width: 44rem;
+    margin: 1.18rem 0;
+    border: 1px solid rgb(255 255 255 / 0.075);
+    border-radius: 1.05rem;
+    background: linear-gradient(135deg, rgb(255 255 255 / 0.04), rgb(255 255 255 / 0.016));
+    padding: 0.52rem;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 16px 42px rgb(0 0 0 / 0.12);
+  }
+  .preview-tabs-rail {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.28rem;
+    border-bottom: 1px solid rgb(255 255 255 / 0.065);
+    padding: 0 0 0.48rem;
+  }
+  .preview-tabs > input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .preview-tabs-rail label {
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+    padding: 0.32rem 0.7rem;
+    color: rgb(255 255 255 / 0.46);
+    cursor: pointer;
+    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+    font-size: 0.66rem;
+    font-weight: 850;
+    letter-spacing: 0.03em;
+    transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+  }
+  .preview-tabs-rail label:hover {
+    border-color: color-mix(in oklch, var(--primary) 18%, rgb(255 255 255 / 0.08));
+    color: rgb(255 255 255 / 0.72);
+  }
+  .preview-tab-panel {
+    display: none;
+    padding: 0.78rem 0.2rem 0.18rem;
+  }
+  .preview-tabs > input:nth-of-type(1):checked ~ .preview-tabs-rail label:nth-of-type(1),
+  .preview-tabs > input:nth-of-type(2):checked ~ .preview-tabs-rail label:nth-of-type(2),
+  .preview-tabs > input:nth-of-type(3):checked ~ .preview-tabs-rail label:nth-of-type(3),
+  .preview-tabs > input:nth-of-type(4):checked ~ .preview-tabs-rail label:nth-of-type(4),
+  .preview-tabs > input:nth-of-type(5):checked ~ .preview-tabs-rail label:nth-of-type(5) {
+    border-color: color-mix(in oklch, var(--primary) 28%, rgb(255 255 255 / 0.08));
+    background: color-mix(in oklch, var(--primary) 12%, rgb(255 255 255 / 0.035));
+    color: rgb(255 255 255 / 0.82);
+  }
+  .preview-tabs > input:nth-of-type(1):checked ~ .preview-tab-panel[data-tab-index="0"],
+  .preview-tabs > input:nth-of-type(2):checked ~ .preview-tab-panel[data-tab-index="1"],
+  .preview-tabs > input:nth-of-type(3):checked ~ .preview-tab-panel[data-tab-index="2"],
+  .preview-tabs > input:nth-of-type(4):checked ~ .preview-tab-panel[data-tab-index="3"],
+  .preview-tabs > input:nth-of-type(5):checked ~ .preview-tab-panel[data-tab-index="4"] {
+    display: block;
+  }
+  .preview-tab-panel p {
+    margin: 0;
+    max-width: 40rem;
+    color: rgb(255 255 255 / 0.64);
+    font-size: 0.94rem;
+    line-height: 1.75;
+    white-space: pre-wrap;
+  }
+  .preview-tab-panel pre {
+    margin: 0;
+    border: 1px solid rgb(255 255 255 / 0.07);
+    border-radius: 0.72rem;
+    background: rgb(0 0 0 / 0.18);
+    padding: 0.7rem 0.78rem;
+    overflow-x: auto;
+  }
+  .preview-tab-panel code {
+    color: rgb(255 255 255 / 0.74);
+    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+    font-size: 0.84rem;
+    line-height: 1.68;
+    white-space: pre;
+  }
   .preview-figure-block {
     position: relative;
     margin: 1.6rem 0;
@@ -472,6 +885,17 @@
     .preview-video,
     .preview-figure-block {
       margin: 1.25rem 0;
+    }
+    .preview-github-card {
+      grid-template-columns: auto minmax(0, 1fr);
+      padding: 0.84rem;
+    }
+    .preview-github-corner {
+      display: none;
+    }
+    .preview-tabs {
+      border-radius: 0.85rem;
+      padding: 0.42rem;
     }
     .preview-video iframe,
     .preview-image-frame img,

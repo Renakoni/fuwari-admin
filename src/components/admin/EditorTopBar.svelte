@@ -5,6 +5,7 @@
   export let lastSavedAt = "";
   export let mode: "write" | "preview" = "write";
   export let pendingImageCount = 0;
+  export let sourceLabel = "New post";
   export let saveMessage = "";
   export let saveState: "idle" | "saving" | "saved" | "blocked" | "error" = "idle";
   export let commitDisabled = false;
@@ -18,7 +19,7 @@
   <div class="composer-status">
     <span class="system-label">Fuwari Composer</span>
     <strong>{draft ? "Draft" : "Published"}</strong>
-    <span>Remote draft{lastSavedAt ? ` · saved ${lastSavedAt}` : " · not saved"}{pendingImageCount ? ` · ${pendingImageCount} image pending` : ""}</span>
+    <span>{sourceLabel}{lastSavedAt ? ` · saved ${lastSavedAt}` : ""}{pendingImageCount ? ` · ${pendingImageCount} image pending` : ""}</span>
     {#if saveMessage}<span class:success={saveState === "saved"} class:warning={saveState === "blocked"} class:error={saveState === "error"}>{saveMessage}</span>{/if}
   </div>
   <div class="composer-actions">

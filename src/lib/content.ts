@@ -44,6 +44,8 @@ export function editorForEntry(entry: ContentEntry): EditorState {
     kind: entry.kind,
     frontmatter: entry.frontmatter,
     body: entry.body,
+    publishedPath: entry.path,
+    publishedSha: entry.sha,
   };
 }
 

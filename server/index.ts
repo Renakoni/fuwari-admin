@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { loadConfig } from "./config.js";
 import { loadContentEntries, publishEditor } from "./content.js";
-import { listRemoteDrafts, saveRemoteDraft } from "./drafts.js";
+import { deleteRemoteDraft, listRemoteDrafts, saveRemoteDraft } from "./drafts.js";
 
 const MAX_BODY_BYTES = 25 * 1024 * 1024;
 const config = loadConfig();
@@ -13,7 +13,7 @@ function corsHeaders(request: IncomingMessage): Record<string, string> {
   if (!origin || !/^http:\/\/127\.0\.0\.1:\d+$/.test(origin)) return {};
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods": "GET, PUT, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, PUT, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   };
 }
@@ -79,6 +79,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     "PUT /api/content": async (req) => publishEditor(config, await readJson(req)),
     "GET /api/drafts": () => listRemoteDrafts(config),
     "PUT /api/drafts": async (req) => saveRemoteDraft(config, await readJson(req)),
+    "DELETE /api/drafts": async (req) => deleteRemoteDraft(config, await readJson(req)),
   };
 
   const handler = routes[key];

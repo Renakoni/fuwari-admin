@@ -40,6 +40,13 @@ export function saveRemoteDraft(editor: EditorState, images: ImageUpload[] = [])
   });
 }
 
+export function deleteRemoteDraft(path: string, sha: string, title?: string): Promise<{ path: string; commitUrl: string }> {
+  return apiFetch<{ path: string; commitUrl: string }>("/api/drafts", {
+    method: "DELETE",
+    body: JSON.stringify({ path, sha, title }),
+  });
+}
+
 export function publishContent(editor: EditorState, images: ImageUpload[] = []): Promise<EditorSaveResult> {
   return apiFetch<EditorSaveResult>("/api/content", {
     method: "PUT",

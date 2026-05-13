@@ -1,8 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
 
-  type ToolAction = "bold" | "italic" | "underline" | "strike" | "link" | "code" | "math" | "quote" | "bullet" | "ordered";
-  type FuwariBlockKind = "note" | "warning" | "figure" | "video" | "evidence";
+  type ToolAction = "bold" | "italic" | "underline" | "strike" | "spoiler" | "link" | "code" | "math" | "quote" | "bullet" | "ordered";
+  type FuwariBlockKind = "note" | "warning" | "figure" | "video" | "evidence" | "rating" | "stat" | "github" | "tabs";
 
   export let tools: Array<{ label: string; icon: string; hint: string; action: ToolAction }> = [];
   export let blocks: Array<{ label: string; icon: string; description: string; kind: FuwariBlockKind; syntax: string }> = [];

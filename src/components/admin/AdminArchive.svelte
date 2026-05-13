@@ -1,6 +1,6 @@
 <script lang="ts">
   import { editorForEntry, editorForNewPost, loadContentEntries } from "../../lib/content";
-  import { editorForRemoteDraft, listRemoteDrafts } from "../../lib/drafts";
+  import { deleteRemoteDraft, editorForRemoteDraft, listRemoteDrafts } from "../../lib/drafts";
   import { saveEditorDraft } from "../../lib/storage";
   import type { ContentEntry } from "../../types";
 
@@ -15,6 +15,10 @@
   let remoteDrafts: ContentEntry[] = [];
   let loading = true;
   let error = "";
+  let deletingDraftPath = "";
+
+  $: remoteDraftByKey = new Map(remoteDrafts.map((entry) => [entryKey(entry), entry]));
+  $: standaloneRemoteDrafts = remoteDrafts.filter((entry) => !entries.some((published) => entryKey(published) === entryKey(entry)));
 
   function formatDate(value: string) {
     if (!value) return "Draft";
@@ -24,6 +28,14 @@
   function estimateMinutes(body: string) {
     const words = body.trim().split(/\s+/).filter(Boolean).length;
     return Math.max(1, Math.ceil(words / 240));
+  }
+
+  function entryKey(entry: ContentEntry) {
+    return `${entry.kind}:${entry.slug}`;
+  }
+
+  function entrySummary(entry: ContentEntry, fallback: string) {
+    return entry.frontmatter.description || entry.body.split("\n").find((line) => line.trim() && !line.startsWith("#")) || fallback;
   }
 
   function createSlug() {
@@ -46,6 +58,32 @@
   function openRemoteDraft(entry: ContentEntry) {
     saveEditorDraft(editorForRemoteDraft(entry));
     window.location.href = "/editor/";
+  }
+
+  function openCardWithKeyboard(event: KeyboardEvent, entry: ContentEntry) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openEntry(entry);
+  }
+
+  function openDraftWithKeyboard(event: KeyboardEvent, entry: ContentEntry) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openRemoteDraft(entry);
+  }
+
+  async function removeRemoteDraft(event: MouseEvent, entry: ContentEntry) {
+    event.stopPropagation();
+    if (!window.confirm(`Delete remote draft for “${entry.frontmatter.title || entry.slug}”?`)) return;
+    deletingDraftPath = entry.path;
+    try {
+      await deleteRemoteDraft(entry.path, entry.sha, entry.frontmatter.title || entry.slug);
+      remoteDrafts = remoteDrafts.filter((draftEntry) => draftEntry.path !== entry.path);
+    } catch (caught) {
+      error = caught instanceof Error ? caught.message : "无法删除远程草稿。";
+    } finally {
+      deletingDraftPath = "";
+    }
   }
 
   async function refresh() {
@@ -109,23 +147,33 @@
         <p>先点第一张卡片新建，或用 Save 保存远程草稿。</p>
       </article>
     {:else}
-      {#each remoteDrafts as entry}
-        <button class="admin-post-card admin-post-card--remote-draft post-card card-base surface-hover" type="button" on:click={() => openRemoteDraft(entry)}>
+      {#each standaloneRemoteDrafts as entry}
+        <article class="admin-post-card admin-post-card--remote-draft post-card card-base surface-hover" role="button" tabindex="0" on:click={() => openRemoteDraft(entry)} on:keydown={(event) => openDraftWithKeyboard(event, entry)}>
           <span class="admin-post-card__kicker">Remote Draft / {formatDate(entry.frontmatter.published)}</span>
           <strong>{entry.frontmatter.title}</strong>
-          <p>{entry.frontmatter.description || entry.body.split("\n").find((line) => line.trim() && !line.startsWith("#")) || "Saved admin draft."}</p>
+          <p>{entrySummary(entry, "Saved admin draft.")}</p>
           <span class="admin-post-card__meta">Saved · {estimateMinutes(entry.body)} min · {entry.slug}</span>
-        </button>
+          <span class="admin-post-card__actions">
+            <button type="button" on:click={(event) => removeRemoteDraft(event, entry)} disabled={deletingDraftPath === entry.path}>{deletingDraftPath === entry.path ? "Deleting" : "Delete draft"}</button>
+          </span>
+        </article>
       {/each}
       {#each entries as entry}
-        <button class="admin-post-card post-card card-base surface-hover" type="button" on:click={() => openEntry(entry)}>
-          <span class="admin-post-card__kicker">{formatDate(entry.frontmatter.published)} / {entry.frontmatter.category || title}</span>
+        {@const remoteDraft = remoteDraftByKey.get(entryKey(entry))}
+        <article class="admin-post-card post-card card-base surface-hover" class:admin-post-card--has-draft={Boolean(remoteDraft)} role="button" tabindex="0" on:click={() => openEntry(entry)} on:keydown={(event) => openCardWithKeyboard(event, entry)}>
+          <span class="admin-post-card__kicker">{formatDate(entry.frontmatter.published)} / {entry.frontmatter.category || title}{remoteDraft ? " / Remote draft available" : ""}</span>
           <strong>{entry.frontmatter.title}</strong>
-          <p>{entry.frontmatter.description || entry.body.split("\n").find((line) => line.trim() && !line.startsWith("#")) || "No description yet."}</p>
+          <p>{entrySummary(entry, "No description yet.")}</p>
           <span class="admin-post-card__meta">
             {entry.frontmatter.draft ? "Draft" : "Published"} · {estimateMinutes(entry.body)} min · {entry.slug}
           </span>
-        </button>
+          {#if remoteDraft}
+            <span class="admin-post-card__actions">
+              <button type="button" on:click|stopPropagation={() => openRemoteDraft(remoteDraft)}>Open draft</button>
+              <button type="button" on:click={(event) => removeRemoteDraft(event, remoteDraft)} disabled={deletingDraftPath === remoteDraft.path}>{deletingDraftPath === remoteDraft.path ? "Deleting" : "Delete draft"}</button>
+            </span>
+          {/if}
+        </article>
       {/each}
     {/if}
   </div>
@@ -174,7 +222,8 @@
     grid-template-areas:
       "kicker meta"
       "title meta"
-      "desc meta";
+      "desc meta"
+      "actions meta";
     column-gap: 1.25rem;
     row-gap: 0.42rem;
     align-items: center;
@@ -205,6 +254,29 @@
     text-transform: uppercase;
   }
   .admin-post-card__kicker { grid-area: kicker; }
+  .admin-post-card__actions {
+    grid-area: actions;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .admin-post-card__actions button {
+    border-radius: 999px;
+    border: 1px solid rgb(255 255 255 / 0.08);
+    background: rgb(255 255 255 / 0.045);
+    padding: 0.38rem 0.62rem;
+    color: rgb(255 255 255 / 0.62);
+    font-size: 0.72rem;
+    font-weight: 850;
+  }
+  .admin-post-card__actions button:hover {
+    color: var(--primary);
+    background: color-mix(in oklch, var(--primary) 12%, transparent);
+  }
+  .admin-post-card__actions button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
   .admin-post-card__meta {
     grid-area: meta;
     max-width: 11rem;
@@ -241,7 +313,8 @@
       linear-gradient(135deg, color-mix(in oklch, var(--card-bg) 88%, var(--primary) 12%), var(--card-bg));
   }
   .admin-post-card--new strong { font-size: clamp(1.55rem, 3vw, 2.35rem); }
-  .admin-post-card--remote-draft {
+  .admin-post-card--remote-draft,
+  .admin-post-card--has-draft {
     background:
       radial-gradient(circle at 92% 0%, color-mix(in oklch, var(--primary) 10%, transparent), transparent 32%),
       color-mix(in oklch, var(--card-bg) 96%, var(--primary) 4%);
@@ -264,7 +337,7 @@
     .admin-archive-hero { align-items: start; flex-direction: column; }
     .admin-post-card {
       grid-template-columns: 1fr;
-      grid-template-areas: "kicker" "title" "desc" "meta";
+      grid-template-areas: "kicker" "title" "desc" "actions" "meta";
       min-height: 8rem;
     }
     .admin-post-card__meta { text-align: left; max-width: none; }

@@ -1,7 +1,7 @@
 import type { ServerConfig } from "./config.js";
 import { parsePost, stringifyPost } from "./frontmatter.js";
-import { parseImages, rewriteFrontmatterImage, rewriteImageSources, uploadImages } from "./assets.js";
-import { listDirectory, readFile, readFileOrNull, writeFile } from "./github.js";
+import { prepareImages, rewriteFrontmatterImage, rewriteImageSources, uploadImages } from "./assets.js";
+import { deleteFile, listDirectory, readFile, readFileOrNull, writeFile } from "./github.js";
 import { sortEntries } from "./content.js";
 import type { ContentEntry, ContentKind, EditorState } from "./types.js";
 
@@ -35,6 +35,20 @@ function isEditorState(value: unknown): value is EditorState {
     && typeof record.body === "string"
     && !!record.frontmatter
     && typeof record.frontmatter === "object";
+}
+
+function isDeleteDraftPayload(value: unknown): value is { path: string; sha: string; title?: string } {
+  if (!value || typeof value !== "object") return false;
+  const record = value as { path?: unknown; sha?: unknown; title?: unknown };
+  return typeof record.path === "string"
+    && typeof record.sha === "string"
+    && (record.title === undefined || typeof record.title === "string");
+}
+
+function validateDraftPath(path: string): void {
+  if (!path.startsWith(`${DRAFT_ROOT}/`) || !path.endsWith("/index.md") || path.includes("..")) {
+    throw new Error("Invalid draft path.");
+  }
 }
 
 export function draftPathForEditor(editor: EditorState): string {
@@ -77,15 +91,27 @@ export async function listRemoteDrafts(config: ServerConfig): Promise<ContentEnt
   return sortEntries(drafts);
 }
 
+export async function deleteRemoteDraft(config: ServerConfig, body: unknown): Promise<{ path: string; commitUrl: string }> {
+  if (!isDeleteDraftPayload(body)) throw new Error("Invalid draft delete payload.");
+  const path = body.path.trim();
+  const sha = body.sha.trim();
+  if (!sha) throw new Error("Invalid draft sha.");
+  validateDraftPath(path);
+
+  const title = body.title?.trim() || path.replace(`${DRAFT_ROOT}/`, "").replace(/\/index\.md$/, "");
+  const result = await deleteFile(config, path, `Delete admin draft: ${title}`, sha);
+  return { path, commitUrl: result.commit.html_url };
+}
+
 export async function saveRemoteDraft(config: ServerConfig, body: unknown): Promise<{ path: string; sha: string; commitUrl: string; body: string; frontmatter: EditorState["frontmatter"]; assets: string[] }> {
   const payload = body && typeof body === "object" && "editor" in body ? body as { editor?: unknown; images?: unknown } : { editor: body, images: [] };
   const editor = payload.editor;
 
   if (!isEditorState(editor)) throw new Error("Invalid draft payload.");
   const path = draftPathForEditor(editor);
-  if (!path.startsWith(`${DRAFT_ROOT}/`) || !path.endsWith("/index.md")) throw new Error("Invalid draft path.");
+  validateDraftPath(path);
 
-  const images = parseImages(payload.images);
+  const images = await prepareImages(payload.images);
   const assetRoot = path.replace(/\/index\.md$/, "/assets");
   const frontmatter = { ...editor.frontmatter, draft: true };
   const message = remoteDraftCommitMessage({ ...editor, frontmatter });

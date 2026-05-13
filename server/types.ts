@@ -31,7 +31,13 @@ export type EditorState = {
   kind: ContentKind;
   frontmatter: PostFrontmatter;
   body: string;
+  remoteDraftPath?: string;
+  remoteDraftSha?: string;
+  publishedPath?: string;
+  publishedSha?: string;
 };
+
+export type ImageUploadRole = "cover" | "content";
 
 export type ImageUpload = {
   src: string;
@@ -39,6 +45,7 @@ export type ImageUpload = {
   size: number;
   type: string;
   data: string;
+  role?: ImageUploadRole;
 };
 
 export type GitHubFile = {

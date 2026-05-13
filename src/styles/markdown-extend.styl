@@ -243,3 +243,49 @@ a.card-github.fetch-error
   transition-property: all
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1)
   transition-duration: 0.15s
+
+.fuwari-tabs
+  margin: 1.25rem 0
+  border: 1px solid var(--line-divider)
+  border-radius: var(--radius-large)
+  background: var(--license-block-bg)
+  padding: 0.55rem
+
+  .fuwari-tabs-rail
+    display: flex
+    flex-wrap: wrap
+    gap: 0.35rem
+    border-bottom: 1px solid var(--line-divider)
+    padding-bottom: 0.5rem
+
+    span
+      border: 1px solid transparent
+      border-radius: 999px
+      padding: 0.28rem 0.68rem
+      color: var(--tw-prose-body)
+      font-size: 0.82rem
+      font-weight: 600
+      opacity: 0.72
+
+      &.active
+        border-color: var(--primary)
+        background: var(--btn-regular-bg)
+        color: var(--tw-prose-headings)
+        opacity: 1
+
+  .fuwari-tab-panel
+    margin-top: 0.7rem
+    border-left: 2px solid var(--line-divider)
+    padding: 0.05rem 0 0.05rem 0.9rem
+
+    &.active
+      border-left-color: var(--primary)
+
+    .fuwari-tab-label
+      margin-bottom: 0.25rem
+      color: var(--tw-prose-headings)
+      font-size: 0.78rem
+      font-weight: 700
+
+    > :last-child
+      margin-bottom: 0

@@ -19,6 +19,7 @@ import { expressiveCodeConfig } from "./src/config.ts";
 import { pluginLanguageBadge } from "./src/plugins/expressive-code/language-badge.ts";
 import { AdmonitionComponent } from "./src/plugins/rehype-component-admonition.mjs";
 import { GithubCardComponent } from "./src/plugins/rehype-component-github-card.mjs";
+import { TabsComponent } from "./src/plugins/rehype-component-tabs.mjs";
 import { parseDirectiveNode } from "./src/plugins/remark-directive-rehype.js";
 import { remarkExcerpt } from "./src/plugins/remark-excerpt.js";
 import { remarkReadingTime } from "./src/plugins/remark-reading-time.mjs";
@@ -132,6 +133,7 @@ export default defineConfig({
 				{
 					components: {
 						github: GithubCardComponent,
+						tabs: TabsComponent,
 						note: (x, y) => AdmonitionComponent(x, y, "note"),
 						tip: (x, y) => AdmonitionComponent(x, y, "tip"),
 						important: (x, y) => AdmonitionComponent(x, y, "important"),
@@ -174,6 +176,18 @@ export default defineConfig({
 		},
 		build: {
 			rollupOptions: {
+				output: {
+					manualChunks(id) {
+						if (!id.includes("node_modules")) return;
+						if (id.includes("@milkdown/crepe")) return "milkdown-crepe";
+						if (id.includes("@milkdown/kit") || id.includes("@milkdown/")) return "milkdown-core";
+						const codeMirrorPackage = id.match(/@codemirror[/\\]([^/\\]+)/)?.[1];
+						if (codeMirrorPackage) return `codemirror-${codeMirrorPackage}`;
+						const lezerPackage = id.match(/@lezer[/\\]([^/\\]+)/)?.[1];
+						if (lezerPackage) return `lezer-${lezerPackage}`;
+						if (id.includes("prosemirror-")) return "prosemirror";
+					},
+				},
 				onwarn(warning, warn) {
 					if (
 						warning.message.includes("is dynamically imported by") &&

@@ -36,8 +36,8 @@
   async function selectCover() {
     const file = fileInput.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      status = "请选择图片文件";
+    if (!["image/png", "image/jpeg"].includes(file.type)) {
+      status = "请选择 PNG 或 JPEG 图片";
       fileInput.value = "";
       return;
     }
@@ -45,7 +45,7 @@
     const data = await fileToBase64(file);
     const src = safeCoverSrc(file.name);
     status = "本地预览，Save/Commit 后上传";
-    dispatch("coverImageSelected", { src, objectUrl, name: file.name, size: file.size, type: file.type, data });
+    dispatch("coverImageSelected", { src, objectUrl, name: file.name, size: file.size, type: file.type, data, role: "cover" });
     fileInput.value = "";
   }
 
@@ -74,7 +74,7 @@
   <div class="cover-picker__head">
     <span>Cover</span>
     <div class="cover-picker__actions">
-      <input bind:this={fileInput} class="cover-picker__file" type="file" accept="image/*" on:change={selectCover} />
+      <input bind:this={fileInput} class="cover-picker__file" type="file" accept="image/png,image/jpeg" on:change={selectCover} />
       <button type="button" on:click={() => fileInput.click()}>{cover ? "Replace" : "Choose"}</button>
       {#if cover}<button type="button" on:click={clearCover}>Remove</button>{/if}
     </div>

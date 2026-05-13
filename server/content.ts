@@ -1,5 +1,5 @@
 import type { ServerConfig } from "./config.js";
-import { copyDraftAssets, parseImages, rewriteFrontmatterImage, rewriteImageSources, uploadImages } from "./assets.js";
+import { copyDraftAssets, prepareImages, rewriteFrontmatterImage, rewriteImageSources, uploadImages } from "./assets.js";
 import { listMarkdownPostFiles, readFile, readFileOrNull, writeFile } from "./github.js";
 import { parsePost, stringifyPost } from "./frontmatter.js";
 import type { ContentEntry, ContentKind, EditorState } from "./types.js";
@@ -82,7 +82,7 @@ export async function publishEditor(config: ServerConfig, body: unknown): Promis
     throw new Error("Invalid publish path.");
   }
 
-  const images = parseImages(payload.images);
+  const images = await prepareImages(payload.images);
   const assetRoot = path.replace(/\/index\.md$/, "/assets");
   const frontmatter = { ...editor.frontmatter, draft: false };
   const message = publishCommitMessage({ ...editor, frontmatter });

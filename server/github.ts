@@ -144,3 +144,25 @@ export async function writeBase64File(
     },
   );
 }
+
+export async function deleteFile(
+  config: ServerConfig,
+  path: string,
+  message: string,
+  sha: string,
+): Promise<{ commit: { html_url: string } }> {
+  const encodedPath = encodePath(path);
+  return githubFetch<{ commit: { html_url: string } }>(
+    config,
+    `/repos/${config.githubOwner}/${config.githubRepo}/contents/${encodedPath}`,
+    {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+        branch: config.githubBranch,
+        sha,
+      }),
+    },
+  );
+}

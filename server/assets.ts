@@ -1,23 +1,25 @@
+import sharp from "sharp";
 import type { ServerConfig } from "./config.js";
 import { readBase64File, readFileOrNull, writeBase64File } from "./github.js";
-import type { EditorState, ImageUpload, PostFrontmatter } from "./types.js";
+import type { EditorState, ImageUpload, ImageUploadRole, PostFrontmatter } from "./types.js";
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_IMAGES = 20;
 const IMAGE_TYPES = {
   "image/png": { ext: "png", magic: (bytes: Buffer) => bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
   "image/jpeg": { ext: "jpg", magic: (bytes: Buffer) => bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff },
-  "image/webp": { ext: "webp", magic: (bytes: Buffer) => bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP" },
-  "image/gif": { ext: "gif", magic: (bytes: Buffer) => ["GIF87a", "GIF89a"].includes(bytes.subarray(0, 6).toString("ascii")) },
 } satisfies Record<string, { ext: string; magic: (bytes: Buffer) => boolean }>;
+
+type OutputImageType = keyof typeof IMAGE_TYPES | "image/webp";
 
 type ImagePayload = {
   src: string;
   name: string;
   size: number;
-  type: keyof typeof IMAGE_TYPES;
+  type: OutputImageType;
   data: string;
   filename: string;
+  role: ImageUploadRole;
 };
 
 function cleanSlug(value: string): string {
@@ -35,13 +37,23 @@ export function draftIdForEditor(editor: EditorState): string {
   return `${editor.kind}-${cleanSlug(editor.slug).replace(/\//g, "~")}`;
 }
 
-function safeFilename(name: string, type: keyof typeof IMAGE_TYPES): string {
+function outputExtension(type: OutputImageType): string {
+  return type === "image/webp" ? "webp" : IMAGE_TYPES[type].ext;
+}
+
+function safeFilename(name: string, type: OutputImageType): string {
   const trimmed = name.trim().toLowerCase();
   const baseName = trimmed.replace(/\.[^.]+$/, "")
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/-{2,}/g, "-")
     .replace(/^-+|-+$/g, "") || "image";
-  return `${baseName}.${IMAGE_TYPES[type].ext}`;
+  return `${baseName}.${outputExtension(type)}`;
+}
+
+function withExtension(filename: string, type: OutputImageType): string {
+  const dot = filename.lastIndexOf(".");
+  const base = dot > 0 ? filename.slice(0, dot) : filename;
+  return `${base}.${outputExtension(type)}`;
 }
 
 function dedupeFilenames(images: ImagePayload[]): ImagePayload[] {
@@ -83,10 +95,83 @@ export function parseImages(value: unknown): ImagePayload[] {
       type,
       data: record.data,
       filename: safeFilename(record.name, type),
+      role: record.role === "cover" ? "cover" : "content",
     };
   });
 
   return dedupeFilenames(images);
+}
+
+async function optimizeImage(image: ImagePayload): Promise<ImagePayload> {
+  const input = Buffer.from(image.data, "base64");
+  return image.role === "cover" ? optimizeCoverImage(image, input) : optimizeContentImage(image, input);
+}
+
+async function optimizeCoverImage(image: ImagePayload, input: Buffer): Promise<ImagePayload> {
+  const output = await sharp(input, { animated: false })
+    .rotate()
+    .resize({ width: 1600, withoutEnlargement: true })
+    .webp({ quality: 84, effort: 6 })
+    .toBuffer();
+  return {
+    ...image,
+    type: "image/webp",
+    data: output.toString("base64"),
+    size: output.length,
+    filename: withExtension(image.filename, "image/webp"),
+  };
+}
+
+async function optimizeContentImage(image: ImagePayload, input: Buffer): Promise<ImagePayload> {
+  if (image.type === "image/png") {
+    const lossless = await sharp(input, { animated: false })
+      .rotate()
+      .webp({ lossless: true, effort: 6 })
+      .toBuffer();
+    if (lossless.length < input.length) {
+      return {
+        ...image,
+        type: "image/webp",
+        data: lossless.toString("base64"),
+        size: lossless.length,
+        filename: withExtension(image.filename, "image/webp"),
+      };
+    }
+
+    const highQuality = await sharp(input, { animated: false })
+      .rotate()
+      .resize({ width: 2560, withoutEnlargement: true })
+      .webp({ quality: 95, effort: 6 })
+      .toBuffer();
+    if (highQuality.length < input.length * 0.9) {
+      return {
+        ...image,
+        type: "image/webp",
+        data: highQuality.toString("base64"),
+        size: highQuality.length,
+        filename: withExtension(image.filename, "image/webp"),
+      };
+    }
+    return image;
+  }
+
+  const output = await sharp(input, { animated: false })
+    .rotate()
+    .resize({ width: 2560, withoutEnlargement: true })
+    .webp({ quality: 94, effort: 6 })
+    .toBuffer();
+  if (output.length >= input.length * 0.98) return image;
+  return {
+    ...image,
+    type: "image/webp",
+    data: output.toString("base64"),
+    size: output.length,
+    filename: withExtension(image.filename, "image/webp"),
+  };
+}
+
+export async function prepareImages(value: unknown): Promise<ImagePayload[]> {
+  return Promise.all(parseImages(value).map(optimizeImage));
 }
 
 export function rewriteImageSources(body: string, images: ImagePayload[]): { body: string; assets: string[] } {

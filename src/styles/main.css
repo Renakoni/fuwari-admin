@@ -2725,7 +2725,7 @@ body.lg\:is-home #top-row {
     color: rgb(15 23 42 / 0.92);
     font-size: clamp(2.4rem, 7vw, 5rem);
     font-weight: 900;
-    letter-spacing: -0.07em;
+    letter-spacing: -0.02em;
     line-height: 0.9;
 }
 :root.dark .admin-static h1 { color: rgb(255 255 255 / 0.92); }

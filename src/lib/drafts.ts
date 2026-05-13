@@ -1,6 +1,6 @@
 import type { ContentEntry, ContentKind, EditorSaveResult, EditorState, ImageUpload } from "../types";
 import { editorForNewPost } from "./content";
-import { listRemoteDrafts as listRemoteDraftsFromApi, saveRemoteDraft as saveRemoteDraftToApi } from "./adminApi";
+import { deleteRemoteDraft as deleteRemoteDraftFromApi, listRemoteDrafts as listRemoteDraftsFromApi, saveRemoteDraft as saveRemoteDraftToApi } from "./adminApi";
 
 const DRAFT_ROOT = ".admin/drafts";
 
@@ -45,10 +45,16 @@ export function saveRemoteDraft(editor: EditorState, images: ImageUpload[] = [])
   return saveRemoteDraftToApi(editor, images);
 }
 
+export function deleteRemoteDraft(path: string, sha: string, title?: string): Promise<{ path: string; commitUrl: string }> {
+  return deleteRemoteDraftFromApi(path, sha, title);
+}
+
 export function editorForRemoteDraft(entry: ContentEntry): EditorState {
   return {
     ...editorForNewPost(entry.kind, entry.slug, entry.frontmatter.title),
     frontmatter: entry.frontmatter,
     body: entry.body,
+    remoteDraftPath: entry.path,
+    remoteDraftSha: entry.sha,
   };
 }

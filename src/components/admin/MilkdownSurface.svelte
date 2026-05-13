@@ -1,14 +1,15 @@
 <script lang="ts">
   import { createEventDispatcher, onDestroy, onMount } from "svelte";
   import { Crepe } from "@milkdown/crepe";
-  import { editorViewCtx } from "@milkdown/kit/core";
+  import { commandsCtx, editorViewCtx } from "@milkdown/kit/core";
+  import { wrapInBulletListCommand, wrapInOrderedListCommand } from "@milkdown/kit/preset/commonmark";
   import { Fragment, type Node as ProseMirrorNode } from "@milkdown/kit/prose/model";
   import { TextSelection } from "@milkdown/kit/prose/state";
   import type { EditorView } from "@milkdown/kit/prose/view";
   import { defaultImageBlock, imageNote, isImagePlaceholder, parseImageBlock, serializeImageBlock } from "./imageBlock";
   import "@milkdown/crepe/theme/frame-dark.css";
 
-  type FuwariBlockKind = "note" | "warning" | "figure" | "video" | "evidence";
+  type FuwariBlockKind = "note" | "warning" | "figure" | "video" | "evidence" | "rating" | "stat" | "github" | "tabs";
 
   export let value = "";
   export let placeholder = "Start writing with Fuwari Markdown...";
@@ -23,9 +24,15 @@
     data: string;
   };
 
-  const dispatch = createEventDispatcher<{ change: string; slash: { x: number; y: number }; selectImage: PendingImage }>();
+  const dispatch = createEventDispatcher<{ change: string; selectImage: PendingImage }>();
 
   const COPY_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>`;
+  function normalizeEscapedMarkdownLinks(markdown: string) {
+    return markdown.replace(/\\\[([^\]\n]+)\]\\\(([^)\n]*)\)/g, (_, label: string, href: string) => {
+      return `[${label}](${href.replace(/\\([.:/])/g, "$1")})`;
+    });
+  }
+
   const LANGUAGE_OPTIONS = [
     "C",
     "C++",
@@ -71,7 +78,6 @@
         [Crepe.Feature.ImageBlock]: false,
         [Crepe.Feature.LinkTooltip]: false,
         [Crepe.Feature.Cursor]: false,
-        [Crepe.Feature.ListItem]: false,
       },
       featureConfigs: {
         [Crepe.Feature.Placeholder]: {
@@ -83,12 +89,14 @@
 
     crepe.on((listener) => {
       listener.markdownUpdated((_, markdown) => {
-        internalValue = markdown;
-        dispatch("change", markdown);
+        const normalized = normalizeEscapedMarkdownLinks(markdown);
+        internalValue = normalized;
+        dispatch("change", normalized);
       });
     });
 
     await crepe.create();
+    flattenLinksInEditor();
     root.addEventListener("keydown", handleKeydown, { capture: true });
     document.addEventListener("pointerdown", handleDocumentCopyPointerDown, true);
     syncEditorChrome();
@@ -114,6 +122,7 @@
 
   function handleKeydown(event: KeyboardEvent) {
     const isMod = event.ctrlKey || event.metaKey;
+    if (!isMod && event.key.length === 1) clearStoredLinkMark();
     if (isMod && ["z", "y"].includes(event.key.toLowerCase())) return;
     if (isMod && event.shiftKey && event.key.toLowerCase() === "k") {
       event.preventDefault();
@@ -145,15 +154,6 @@
       insertLink();
       return;
     }
-    if (event.key !== "/" || !crepe) return;
-    crepe.editor.action((ctx) => {
-      const view = ctx.get(editorViewCtx);
-      const { from, empty } = view.state.selection;
-      if (!empty) return;
-      event.preventDefault();
-      const coords = view.coordsAtPos(from);
-      dispatch("slash", { x: coords.left, y: coords.bottom });
-    });
   }
 
   function codeBlockText(codeBlock: Element) {
@@ -210,9 +210,13 @@
     root?.querySelectorAll(".milkdown-code-block").forEach((codeBlock) => {
       const language = getCodeBlockLanguage(codeBlock).trim().toLowerCase();
       const isCalloutBlock = ["note", "warning", "proof"].includes(language);
+      const isMetricBlock = ["rating", "stat"].includes(language);
+      const isPlainSpecialBlock = ["github", "tabs"].includes(language);
       codeBlock.toggleAttribute("data-fuwari-video", language === "video");
       codeBlock.toggleAttribute("data-fuwari-image", language === "image");
       codeBlock.toggleAttribute("data-fuwari-callout", isCalloutBlock);
+      codeBlock.toggleAttribute("data-fuwari-metric", isMetricBlock);
+      codeBlock.toggleAttribute("data-fuwari-plain-special", isPlainSpecialBlock);
       codeBlock.toggleAttribute("data-fuwari-latex", language === "fuwari-latex");
       codeBlock.setAttribute("data-fuwari-language", language === "fuwari-latex" ? "latex" : language || "text");
       if (language === "image") {
@@ -267,7 +271,7 @@
           <label>note<input class="fuwari-image-card-note-input" /></label>
         </div>
         <div class="fuwari-image-card-actions">
-          <input class="fuwari-image-card-file" type="file" accept="image/*" />
+          <input class="fuwari-image-card-file" type="file" accept="image/png,image/jpeg" />
           <button class="fuwari-image-card-pick" type="button">选择图片</button>
           <span class="fuwari-image-card-status"></span>
         </div>
@@ -319,9 +323,9 @@
     const input = card.querySelector(".fuwari-image-card-file") as HTMLInputElement | null;
     const file = input?.files?.[0];
     if (!input || !file) return;
-    if (!file.type.startsWith("image/")) {
+    if (!["image/png", "image/jpeg"].includes(file.type)) {
       const status = card.querySelector(".fuwari-image-card-status") as HTMLSpanElement | null;
-      if (status) status.textContent = "请选择图片文件";
+      if (status) status.textContent = "请选择 PNG 或 JPEG 图片";
       input.value = "";
       return;
     }
@@ -330,7 +334,7 @@
     const objectUrl = URL.createObjectURL(file);
     const note = (card.querySelector(".fuwari-image-card-note-input") as HTMLInputElement | null)?.value ?? defaultImageBlock.caption;
     updateImageBlockText(codeBlock, serializeImageBlock({ src, alt: note, caption: note }));
-    dispatch("selectImage", { src, objectUrl, name: file.name, size: file.size, type: file.type, data });
+    dispatch("selectImage", { src, objectUrl, name: file.name, size: file.size, type: file.type, data, role: "content" });
     input.value = "";
   }
 
@@ -478,13 +482,25 @@
     codeBlock.querySelector(".fuwari-language-suggestions")?.remove();
   }
 
-  export function getMarkdown() {
-    return crepe?.getMarkdown() ?? internalValue;
-  }
-
-  export function focus() {
-    crepe?.editor.action((ctx) => {
-      ctx.get(editorViewCtx).focus();
+  function flattenLinksInEditor() {
+    if (!crepe) return;
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const link = view.state.schema.marks.link;
+      if (!link) return;
+      const replacements: Array<{ from: number; to: number; text: string }> = [];
+      view.state.doc.descendants((node, pos) => {
+        if (!node.isText) return;
+        const mark = link.isInSet(node.marks);
+        if (!mark) return;
+        replacements.push({ from: pos, to: pos + node.nodeSize, text: `[${node.text ?? ""}](${String(mark.attrs.href ?? "")})` });
+      });
+      if (replacements.length === 0) return;
+      let tr = view.state.tr;
+      for (const replacement of replacements.reverse()) {
+        tr = tr.replaceWith(replacement.from, replacement.to, view.state.schema.text(replacement.text));
+      }
+      view.dispatch(tr.scrollIntoView());
     });
   }
 
@@ -518,7 +534,8 @@
   function syncMarkdownSoon() {
     window.queueMicrotask(() => {
       if (!crepe) return;
-      const markdown = crepe.getMarkdown();
+      flattenLinksInEditor();
+      const markdown = normalizeEscapedMarkdownLinks(crepe.getMarkdown());
       internalValue = markdown;
       dispatch("change", markdown);
     });
@@ -533,6 +550,26 @@
       view.focus();
     });
     syncMarkdownSoon();
+  }
+
+  export function focusHeading(text: string, occurrence: number) {
+    if (!crepe) return;
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      let target = 1;
+      let seen = 0;
+      view.state.doc.descendants((node, pos) => {
+        if (target > 1) return false;
+        if (!node.isTextblock || node.textContent.trim() !== text) return;
+        seen += 1;
+        if (seen !== occurrence) return;
+        target = pos + 1;
+        return false;
+      });
+      const position = Math.min(target, view.state.doc.content.size);
+      view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(position))).scrollIntoView());
+      view.focus();
+    });
   }
 
   function insertAfterCurrentBlock(view: any, nodes: any[]) {
@@ -557,6 +594,10 @@
         figure: () => [codeBlock.create({ language: "image" }, schema.text(serializeImageBlock()))],
         video: () => [codeBlock.create({ language: "video" }, schema.text("src: https://www.youtube.com/embed/VIDEO_ID\nnote: 视频注记"))],
         evidence: () => [codeBlock.create({ language: "proof" }, schema.text("title: 证据\n来源、观察或支撑结论的材料。"))],
+        rating: () => [codeBlock.create({ language: "rating" }, schema.text("label: 推荐度\nvalue: 4.5\nmax: 5\nnote: 值得一试"))],
+        stat: () => [codeBlock.create({ language: "stat" }, schema.text("label: 完成度\nvalue: 72\nmax: 100\nnote: 当前阶段"))],
+        github: () => [codeBlock.create({ language: "github" }, schema.text("https://github.com/saicaca/fuwari"))],
+        tabs: () => [codeBlock.create({ language: "tabs" }, schema.text("pnpm = pnpm install\nnpm = npm install\nbun = bun install"))],
       }[kind]();
       insertAfterCurrentBlock(view, nodes);
     });
@@ -578,12 +619,12 @@
     if (!crepe) return;
     crepe.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx);
-      const { schema } = view.state;
-      const list = ordered ? schema.nodes.ordered_list : schema.nodes.bullet_list;
-      const listItem = schema.nodes.list_item;
-      const paragraph = schema.nodes.paragraph;
-      if (!list || !listItem || !paragraph) return;
-      insertAfterCurrentBlock(view, [list.create(null, [listItem.create(null, [paragraph.create(null, schema.text("列表项"))])])]);
+      const commands = ctx.get(commandsCtx);
+      const applied = commands.call(ordered ? wrapInOrderedListCommand.key : wrapInBulletListCommand.key);
+      if (!applied) {
+        view.dispatch(view.state.tr.insertText(ordered ? "1. " : "- ").scrollIntoView());
+      }
+      view.focus();
     });
     syncMarkdownSoon();
   }
@@ -598,6 +639,49 @@
       view.dispatch(view.state.tr.insertText(next, from, to));
       view.focus();
     });
+  }
+
+  export function wrapSelectedTextOnly(before: string, after: string) {
+    if (!crepe) return;
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const { from, to, empty } = view.state.selection;
+      if (empty) return;
+      const selected = view.state.doc.textBetween(from, to, "\n");
+      view.dispatch(view.state.tr.insertText(`${before}${selected}${after}`, from, to).scrollIntoView());
+      view.focus();
+    });
+    syncMarkdownSoon();
+  }
+
+  function clearStoredLinkMark() {
+    if (!crepe) return;
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const markType = view.state.schema.marks.link;
+      if (!markType || !view.state.selection.empty) return;
+      const marks = view.state.storedMarks ?? view.state.selection.$from.marks();
+      if (!marks.some((mark) => mark.type === markType)) return;
+      view.dispatch(view.state.tr.setStoredMarks(marks.filter((mark) => mark.type !== markType)));
+    });
+  }
+
+  function insertMarkdownLink() {
+    if (!crepe) return;
+    crepe.editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const { from, to, empty } = view.state.selection;
+      const selected = empty ? "链接文字" : view.state.doc.textBetween(from, to, "\n");
+      const next = `[${selected}]()`;
+      const tr = view.state.tr.insertText(next, from, to);
+      const cursorFrom = from + 1;
+      const cursorTo = cursorFrom + selected.length;
+      tr.removeStoredMark(view.state.schema.marks.link);
+      tr.setSelection(TextSelection.create(tr.doc, cursorFrom, cursorTo));
+      view.dispatch(tr.scrollIntoView());
+      view.focus();
+    });
+    syncMarkdownSoon();
   }
 
   export function toggleWrap(before: string, after: string) {
@@ -674,8 +758,7 @@
   }
 
   export function insertLink() {
-    if (applyMark(["link"], { href: "https://" })) return;
-    wrapSelection("[", "](https://)");
+    insertMarkdownLink();
   }
 
   onDestroy(() => {
@@ -731,7 +814,7 @@
   .milkdown-root :global(.ProseMirror h6) {
     color: rgb(255 255 255 / 0.9);
     font-weight: 900;
-    letter-spacing: -0.052em;
+    letter-spacing: -0.016em;
     line-height: 1.16;
   }
   .milkdown-root :global(.ProseMirror h1) {
@@ -745,12 +828,12 @@
   .milkdown-root :global(.ProseMirror h3) {
     margin: 1rem 0 0.48rem;
     font-size: clamp(1.16rem, 1.9vw, 1.46rem);
-    letter-spacing: -0.04em;
+    letter-spacing: -0.01em;
   }
   .milkdown-root :global(.ProseMirror h4) {
     margin: 0.9rem 0 0.38rem;
     font-size: 1.06rem;
-    letter-spacing: -0.03em;
+    letter-spacing: 0;
   }
   .milkdown-root :global(.ProseMirror h5),
   .milkdown-root :global(.ProseMirror h6) {
@@ -787,6 +870,43 @@
   .milkdown-root :global(.ProseMirror li::marker) {
     color: color-mix(in oklch, var(--primary) 74%, rgb(255 255 255 / 0.5));
     font-weight: 900;
+  }
+  .milkdown-root :global(.ProseMirror .milkdown-list-item-block) {
+    margin: 0.28rem 0;
+  }
+  .milkdown-root :global(.ProseMirror .milkdown-list-item-block li) {
+    display: grid;
+    grid-template-columns: 1.15rem minmax(0, 1fr);
+    column-gap: 0.42rem;
+    align-items: start;
+    margin: 0;
+    list-style: none;
+    padding-left: 0;
+  }
+  .milkdown-root :global(.ProseMirror .milkdown-list-item-block li::marker) {
+    content: "";
+  }
+  .milkdown-root :global(.ProseMirror .milkdown-list-item-block .label-wrapper) {
+    display: grid;
+    place-items: center;
+    width: 1.15rem;
+    height: 1.82em;
+    color: color-mix(in oklch, var(--primary) 74%, rgb(255 255 255 / 0.5));
+  }
+  .milkdown-root :global(.ProseMirror .milkdown-list-item-block .label-wrapper svg) {
+    width: 0.72rem;
+    height: 0.72rem;
+    fill: currentColor;
+  }
+  .milkdown-root :global(.ProseMirror .milkdown-list-item-block .content-dom > p) {
+    margin: 0;
+    min-height: 1.82em;
+  }
+  .milkdown-root :global(.ProseMirror a) {
+    color: inherit;
+    font: inherit;
+    font-weight: inherit;
+    text-decoration: none;
   }
   .milkdown-root :global(.ProseMirror code) {
     border-radius: 0.36rem;
@@ -829,6 +949,8 @@
   .milkdown-root :global(.milkdown-code-block[data-fuwari-video]),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-image]),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-callout]),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-metric]),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-plain-special]),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-latex]) {
     margin-bottom: 1rem;
   }
@@ -843,6 +965,10 @@
   .milkdown-root :global(.milkdown-code-block[data-fuwari-image] .fuwari-language-suggestions),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-callout] .fuwari-language-input),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-callout] .fuwari-language-suggestions),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-metric] .fuwari-language-input),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-metric] .fuwari-language-suggestions),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-plain-special] .fuwari-language-input),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-plain-special] .fuwari-language-suggestions),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-latex] .fuwari-language-input),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-latex] .fuwari-language-suggestions) {
     display: none !important;
@@ -850,6 +976,8 @@
   .milkdown-root :global(.milkdown-code-block[data-fuwari-video]::before),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-image]::before),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-callout]::before),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-metric]::before),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-plain-special]::before),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-latex]::before) {
     content: attr(data-fuwari-language);
     position: absolute;
@@ -867,14 +995,29 @@
   }
   .milkdown-root :global(.milkdown-code-block[data-fuwari-video] .cm-editor),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-callout] .cm-editor),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-metric] .cm-editor),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-plain-special] .cm-editor),
   .milkdown-root :global(.milkdown-code-block[data-fuwari-latex] .cm-editor) {
     padding-top: 2.2rem;
   }
-  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout]) {
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-callout]),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-metric]),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-plain-special]) {
     border-color: color-mix(in oklch, var(--primary) 22%, transparent);
     background:
       radial-gradient(circle at 0% 0%, color-mix(in oklch, var(--primary) 10%, transparent), transparent 42%),
       rgb(13 17 23 / 0.62);
+  }
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-metric]),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-language="github"]),
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-language="tabs"]) {
+    --primary: oklch(0.76 0.12 210);
+  }
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-language="github"]) {
+    --primary: oklch(0.74 0.11 255);
+  }
+  .milkdown-root :global(.milkdown-code-block[data-fuwari-language="rating"]) {
+    --primary: oklch(0.78 0.14 88);
   }
   .milkdown-root :global(.milkdown-code-block[data-fuwari-language="warning"]) {
     --primary: oklch(0.78 0.15 75);
