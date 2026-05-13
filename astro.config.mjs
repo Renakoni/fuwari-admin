@@ -35,7 +35,8 @@ function normalizeSveltePureAnnotations() {
 				.replace(/(var|let)\s*\/\* @__PURE__ \*\/\s*\/\* @__PURE__ \*\//g, "$1")
 				.replace(/(var|let)\s*\/\* @__PURE__ \*\//g, "$1")
 				.replace(/\$\.escape\(\s*\/\* @__PURE__ \*\/\s*\/\* @__PURE__ \*\//g, "$.escape(")
-				.replace(/\{\s*\/\* @__PURE__ \*\/\s*\/\* @__PURE__ \*\//g, "{");
+				.replace(/\{\s*\/\* @__PURE__ \*\/\s*\/\* @__PURE__ \*\//g, "{")
+				.replace(/\/\* @__PURE__ \*\//g, "");
 			return normalized === code ? null : { code: normalized, map: null };
 		},
 	};
