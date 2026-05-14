@@ -7,6 +7,7 @@
   export let pendingImageCount = 0;
   export let sourceLabel = "New post";
   export let saveMessage = "";
+  export let statusLabel = "Draft";
   export let saveState: "idle" | "saving" | "saved" | "blocked" | "error" = "idle";
   export let commitDisabled = false;
   export let commitLabel = "Commit";
@@ -18,7 +19,7 @@
   <a class="composer-back" href="/blog/">← Blog</a>
   <div class="composer-status">
     <span class="system-label">Fuwari Composer</span>
-    <strong>{draft ? "Draft" : "Published"}</strong>
+    <strong>{statusLabel}</strong>
     <span>{sourceLabel}{lastSavedAt ? ` · saved ${lastSavedAt}` : ""}{pendingImageCount ? ` · ${pendingImageCount} image pending` : ""}</span>
     {#if saveMessage}<span class:success={saveState === "saved"} class:warning={saveState === "blocked"} class:error={saveState === "error"}>{saveMessage}</span>{/if}
   </div>

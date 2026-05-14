@@ -47,8 +47,11 @@
   let removeLeaveGuards: (() => void) | null = null;
 
   $: sourceLabel = editor?.remoteDraftPath
-    ? editor.publishedPath ? "Published post · remote draft saved" : "Editing remote draft"
-    : editor?.publishedPath ? "Editing published post" : "New post";
+    ? editor.publishedPath ? "Editing remote draft for published post" : "Remote draft only"
+    : editor?.publishedPath ? "Committed published post" : "New local draft";
+  $: sourceStatusLabel = editor?.remoteDraftPath
+    ? editor.publishedPath ? "Remote Draft" : "Remote Draft Only"
+    : editor?.publishedPath ? "Published" : "Local Draft";
 
   $: tagList = tags.split(",").map((tag) => tag.trim()).filter(Boolean);
   $: wordCount = body.trim() ? body.trim().split(/\s+/).length : 0;
@@ -430,7 +433,7 @@
 </script>
 
 <section class="composer-shell">
-  <EditorTopBar {draft} {lastSavedAt} {mode} {sourceLabel} pendingImageCount={pendingImages.size} {saveMessage} {saveState} commitDisabled={saveState === "saving"} commitLabel={saveState === "saving" && saveMessage.startsWith("Publishing") ? "Publishing" : "Commit"} on:modeChange={(event) => setMode(event.detail)} on:save={saveRemoteDraft} on:commit={commitRemoteContent} />
+  <EditorTopBar {draft} {lastSavedAt} {mode} {sourceLabel} statusLabel={sourceStatusLabel} pendingImageCount={pendingImages.size} {saveMessage} {saveState} commitDisabled={saveState === "saving"} commitLabel={saveState === "saving" && saveMessage.startsWith("Publishing") ? "Publishing" : "Commit"} on:modeChange={(event) => setMode(event.detail)} on:save={saveRemoteDraft} on:commit={commitRemoteContent} />
 
   <div class="composer-workbench">
     <main class="composer-stage card-base">
@@ -439,7 +442,7 @@
         <div class="composer-kicker">
           <span>{category || "Uncategorized"}</span>
           <span>{published}</span>
-          <span>{draft ? "Draft" : "Live"}</span>
+          <span>{sourceStatusLabel}</span>
         </div>
         <input class="composer-title" bind:value={title} aria-label="Title" placeholder="Untitled Draft" />
       </div>

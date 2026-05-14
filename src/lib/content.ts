@@ -1,6 +1,6 @@
 import type { ContentEntry, ContentKind, ContentTab, EditorState } from "../types";
 import { defaultFrontmatter } from "./frontmatter";
-import { loadContentEntries as loadContentEntriesFromApi } from "./adminApi";
+import { deletePublishedContent as deletePublishedContentFromApi, loadContentEntries as loadContentEntriesFromApi } from "./adminApi";
 
 export function classifyPost(category: string): ContentKind {
   return category.trim().toLowerCase() === "notes" ? "note" : "blog";
@@ -61,4 +61,8 @@ export function sortEntries(entries: ContentEntry[]): ContentEntry[] {
 
 export async function loadContentEntries(): Promise<ContentEntry[]> {
   return loadContentEntriesFromApi();
+}
+
+export function deletePublishedContent(path: string, sha: string, title?: string): Promise<{ path: string; deleted: string[]; commitUrl: string }> {
+  return deletePublishedContentFromApi(path, sha, title);
 }

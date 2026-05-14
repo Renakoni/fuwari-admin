@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import type { ServerConfig } from "./config.js";
-import { readBase64File, readFileOrNull, writeBase64File, type MultiFileCommitOperation } from "./github.js";
+import { listDirectory, readBase64File, readFileOrNull, writeBase64File, type MultiFileCommitOperation } from "./github.js";
 import type { EditorState, ImageUpload, ImageUploadRole, PostFrontmatter } from "./types.js";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -262,4 +262,15 @@ export async function draftAssetCommitOperations(config: ServerConfig, editor: E
     operations.push({ path: targetPath, content: source.content, encoding: "base64" });
   }
   return operations;
+}
+
+export async function deleteDraftAssetOperations(config: ServerConfig, editor: EditorState): Promise<MultiFileCommitOperation[]> {
+  const draftAssetRoot = `.admin/drafts/${draftIdForEditor(editor)}/assets`;
+  const entries = await listDirectory(config, draftAssetRoot).catch((caught) => {
+    if (caught instanceof Error && caught.message.startsWith("GitHub 404:")) return [];
+    throw caught;
+  });
+  return entries
+    .filter((entry) => entry.type === "file")
+    .map((entry) => ({ path: entry.path, delete: true }));
 }

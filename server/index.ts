@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { loadConfig } from "./config.js";
-import { loadContentEntries, publishEditor } from "./content.js";
+import { deletePublishedContent, loadContentEntries, publishEditor } from "./content.js";
 import { deleteRemoteDraft, listRemoteDrafts, saveRemoteDraft } from "./drafts.js";
 
 const MAX_BODY_BYTES = 25 * 1024 * 1024;
@@ -77,6 +77,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
     "GET /api/health": () => ({ ok: true }),
     "GET /api/content": () => loadContentEntries(config),
     "PUT /api/content": async (req) => publishEditor(config, await readJson(req)),
+    "DELETE /api/content": async (req) => deletePublishedContent(config, await readJson(req)),
     "GET /api/drafts": () => listRemoteDrafts(config),
     "PUT /api/drafts": async (req) => saveRemoteDraft(config, await readJson(req)),
     "DELETE /api/drafts": async (req) => deleteRemoteDraft(config, await readJson(req)),

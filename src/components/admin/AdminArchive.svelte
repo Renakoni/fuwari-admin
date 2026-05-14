@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { editorForEntry, editorForNewPost, loadContentEntries } from "../../lib/content";
+  import { deletePublishedContent, editorForEntry, editorForNewPost, loadContentEntries } from "../../lib/content";
   import { deleteRemoteDraft, editorForRemoteDraft, listRemoteDrafts } from "../../lib/drafts";
   import { saveEditorDraft } from "../../lib/storage";
   import type { ContentEntry } from "../../types";
@@ -16,6 +16,7 @@
   let loading = true;
   let error = "";
   let deletingDraftPath = "";
+  let deletingPublishedPath = "";
 
   $: remoteDraftByKey = new Map(remoteDrafts.map((entry) => [entryKey(entry), entry]));
   $: standaloneRemoteDrafts = remoteDrafts.filter((entry) => !entries.some((published) => entryKey(published) === entryKey(entry)));
@@ -86,6 +87,26 @@
     }
   }
 
+  async function removePublishedContent(event: MouseEvent, entry: ContentEntry) {
+    event.stopPropagation();
+    const title = entry.frontmatter.title || entry.slug;
+    const remoteDraft = remoteDraftByKey.get(entryKey(entry));
+    const draftWarning = remoteDraft ? "\n\nA remote draft exists for this slug. It will remain available after deleting the published post." : "";
+    if (!window.confirm(`Delete the published post “${title}”?\n\nThis will create a GitHub commit that removes the post index.md and post assets.${draftWarning}`)) return;
+    const typed = window.prompt(`Type the slug to confirm deleting the published post:\n${entry.slug}`);
+    if (typed !== entry.slug) return;
+
+    deletingPublishedPath = entry.path;
+    try {
+      await deletePublishedContent(entry.path, entry.sha, title);
+      entries = entries.filter((publishedEntry) => publishedEntry.path !== entry.path);
+    } catch (caught) {
+      error = caught instanceof Error ? caught.message : "无法删除已发布内容。";
+    } finally {
+      deletingPublishedPath = "";
+    }
+  }
+
   async function refresh() {
     loading = true;
     error = "";
@@ -120,8 +141,9 @@
   <div class="admin-card-list">
     <button class="admin-post-card admin-post-card--new post-card card-base surface-hover" type="button" on:click={openNew}>
       <span class="admin-post-card__kicker">{newLabel} / Compose</span>
+      <span class="admin-status-badges"><span class="admin-status-badge admin-status-badge--draft">New local draft</span></span>
       <strong>{newTitle}</strong>
-      <p>进入专注编辑页。</p>
+      <p>Compose locally, then Save or Commit.</p>
       <span class="admin-post-card__meta">Create draft →</span>
     </button>
 
@@ -149,10 +171,11 @@
     {:else}
       {#each standaloneRemoteDrafts as entry}
         <article class="admin-post-card admin-post-card--remote-draft post-card card-base surface-hover" role="button" tabindex="0" on:click={() => openRemoteDraft(entry)} on:keydown={(event) => openDraftWithKeyboard(event, entry)}>
-          <span class="admin-post-card__kicker">Remote Draft / {formatDate(entry.frontmatter.published)}</span>
+          <span class="admin-post-card__kicker">Remote draft only / {formatDate(entry.frontmatter.published)}</span>
+          <span class="admin-status-badges"><span class="admin-status-badge admin-status-badge--draft">Draft saved on GitHub</span></span>
           <strong>{entry.frontmatter.title}</strong>
           <p>{entrySummary(entry, "Saved admin draft.")}</p>
-          <span class="admin-post-card__meta">Saved · {estimateMinutes(entry.body)} min · {entry.slug}</span>
+          <span class="admin-post-card__meta">Not published · {estimateMinutes(entry.body)} min · {entry.slug}</span>
           <span class="admin-post-card__actions">
             <button type="button" on:click={(event) => removeRemoteDraft(event, entry)} disabled={deletingDraftPath === entry.path}>{deletingDraftPath === entry.path ? "Deleting" : "Delete draft"}</button>
           </span>
@@ -161,18 +184,23 @@
       {#each entries as entry}
         {@const remoteDraft = remoteDraftByKey.get(entryKey(entry))}
         <article class="admin-post-card post-card card-base surface-hover" class:admin-post-card--has-draft={Boolean(remoteDraft)} role="button" tabindex="0" on:click={() => openEntry(entry)} on:keydown={(event) => openCardWithKeyboard(event, entry)}>
-          <span class="admin-post-card__kicker">{formatDate(entry.frontmatter.published)} / {entry.frontmatter.category || title}{remoteDraft ? " / Remote draft available" : ""}</span>
+          <span class="admin-post-card__kicker">Published / {formatDate(entry.frontmatter.published)} / {entry.frontmatter.category || title}</span>
+          <span class="admin-status-badges">
+            <span class="admin-status-badge admin-status-badge--published">Committed</span>
+            {#if remoteDraft}<span class="admin-status-badge admin-status-badge--draft">Remote draft exists</span>{/if}
+          </span>
           <strong>{entry.frontmatter.title}</strong>
           <p>{entrySummary(entry, "No description yet.")}</p>
           <span class="admin-post-card__meta">
-            {entry.frontmatter.draft ? "Draft" : "Published"} · {estimateMinutes(entry.body)} min · {entry.slug}
+            {remoteDraft ? "Live version shown" : "Live"} · {estimateMinutes(entry.body)} min · {entry.slug}
           </span>
-          {#if remoteDraft}
-            <span class="admin-post-card__actions">
+          <span class="admin-post-card__actions">
+            {#if remoteDraft}
               <button type="button" on:click|stopPropagation={() => openRemoteDraft(remoteDraft)}>Open draft</button>
               <button type="button" on:click={(event) => removeRemoteDraft(event, remoteDraft)} disabled={deletingDraftPath === remoteDraft.path}>{deletingDraftPath === remoteDraft.path ? "Deleting" : "Delete draft"}</button>
-            </span>
-          {/if}
+            {/if}
+            <button class="admin-danger-button" type="button" on:click={(event) => removePublishedContent(event, entry)} disabled={deletingPublishedPath === entry.path}>{deletingPublishedPath === entry.path ? "Deleting" : "Delete published"}</button>
+          </span>
         </article>
       {/each}
     {/if}
@@ -221,6 +249,7 @@
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       "kicker meta"
+      "badges meta"
       "title meta"
       "desc meta"
       "actions meta";
@@ -254,6 +283,36 @@
     text-transform: uppercase;
   }
   .admin-post-card__kicker { grid-area: kicker; }
+  .admin-status-badges {
+    grid-area: badges;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .admin-status-badge {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgb(255 255 255 / 0.08);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.045);
+    padding: 0.18rem 0.5rem;
+    color: rgb(255 255 255 / 0.58);
+    font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+    font-size: 0.62rem;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .admin-status-badge--published {
+    border-color: color-mix(in oklch, var(--primary) 28%, transparent);
+    background: color-mix(in oklch, var(--primary) 10%, transparent);
+    color: var(--primary);
+  }
+  .admin-status-badge--draft {
+    border-color: oklch(0.78 0.15 75 / 0.28);
+    background: oklch(0.78 0.15 75 / 0.08);
+    color: oklch(0.82 0.13 75);
+  }
   .admin-post-card__actions {
     grid-area: actions;
     display: flex;
@@ -272,6 +331,11 @@
   .admin-post-card__actions button:hover {
     color: var(--primary);
     background: color-mix(in oklch, var(--primary) 12%, transparent);
+  }
+  .admin-post-card__actions .admin-danger-button:hover {
+    border-color: oklch(0.68 0.19 27 / 0.32);
+    background: oklch(0.68 0.19 27 / 0.1);
+    color: oklch(0.76 0.16 27);
   }
   .admin-post-card__actions button:disabled {
     opacity: 0.55;
@@ -337,7 +401,7 @@
     .admin-archive-hero { align-items: start; flex-direction: column; }
     .admin-post-card {
       grid-template-columns: 1fr;
-      grid-template-areas: "kicker" "title" "desc" "actions" "meta";
+      grid-template-areas: "kicker" "badges" "title" "desc" "actions" "meta";
       min-height: 8rem;
     }
     .admin-post-card__meta { text-align: left; max-width: none; }

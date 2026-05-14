@@ -53,3 +53,10 @@ export function publishContent(editor: EditorState, images: ImageUpload[] = []):
     body: JSON.stringify({ editor, images }),
   });
 }
+
+export function deletePublishedContent(path: string, sha: string, title?: string): Promise<{ path: string; deleted: string[]; commitUrl: string }> {
+  return apiFetch<{ path: string; deleted: string[]; commitUrl: string }>("/api/content", {
+    method: "DELETE",
+    body: JSON.stringify({ path, sha, title }),
+  });
+}
